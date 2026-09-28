@@ -176,8 +176,14 @@
 
   function huddlePage() {
     return top("Today’s Team Huddle", "Align. Motivate. Win the day.") +
-      '<div class="card pad"><div class="huddle"><div class="label">TODAY’S FOCUS</div><h2>' + data.huddle[0] + '</h2><div class="sub">' + data.huddle[1] + '</div></div>' +
-      '<div class="hgrid"><div class="hbox"><b>Team Challenge</b><strong>' + data.huddle[2] + '</strong></div><div class="hbox"><b>Recognition</b><strong>' + data.huddle[3] + '</strong></div></div></div>' +
+      '<div class="card pad"><div class="huddle">' +
+      '<div><label>Focus label</label><input id="huddle-label" value="TODAY’S FOCUS"></div>' +
+      '<div><label>Focus title</label><input id="huddle-focus" value="' + data.huddle[0].replace(/"/g, '&quot;') + '"></div>' +
+      '<div><label>Focus details</label><textarea id="huddle-details">' + data.huddle[1] + '</textarea></div>' +
+      '</div><div class="hgrid">' +
+      '<div class="hbox"><label>Team Challenge</label><input id="huddle-challenge" value="' + data.huddle[2].replace(/"/g, '&quot;') + '"></div>' +
+      '<div class="hbox"><label>Recognition</label><input id="huddle-recognition" value="' + data.huddle[3].replace(/"/g, '&quot;') + '"></div>' +
+      '</div><button class="btn" id="save-huddle" style="margin-top:15px">Save Huddle</button></div>' +
       '<div class="card pad" style="margin-top:15px"><div class="head"><div><h2>Today’s action items</h2><p>Edit, add, or remove your action items.</p></div><button class="btn" id="add-action">+ Add Action</button></div>' + data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + action.replace(/"/g, '&quot;') + '"><button type="button" class="action-delete" data-delete-action="' + i + '">×</button></div>').join("") + '</div>';
   }
 
@@ -278,6 +284,16 @@
         saveData();
         render();
       }
+    });
+
+    const saveHuddle = document.getElementById("save-huddle");
+    if (saveHuddle) saveHuddle.addEventListener("click", () => {
+      data.huddle[0] = document.getElementById("huddle-focus").value;
+      data.huddle[1] = document.getElementById("huddle-details").value;
+      data.huddle[2] = document.getElementById("huddle-challenge").value;
+      data.huddle[3] = document.getElementById("huddle-recognition").value;
+      saveData();
+      render();
     });
 
     const addAction = document.getElementById("add-action");
