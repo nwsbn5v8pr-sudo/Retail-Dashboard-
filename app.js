@@ -272,16 +272,6 @@
       }
     });
 
-    const saveHuddle = document.getElementById("save-huddle");
-    if (saveHuddle) saveHuddle.addEventListener("click", () => {
-      data.huddle[0] = document.getElementById("huddle-focus").value;
-      data.huddle[1] = document.getElementById("huddle-details").value;
-      data.huddle[2] = document.getElementById("huddle-challenge").value;
-      data.huddle[3] = document.getElementById("huddle-recognition").value;
-      saveData();
-      render();
-    });
-
     const addAction = document.getElementById("add-action");
     if (addAction) addAction.addEventListener("click", () => {
       data.actions.push("New action item");
