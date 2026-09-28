@@ -176,23 +176,9 @@
 
   function huddlePage() {
     return top("Today’s Team Huddle", "Align. Motivate. Win the day.") +
-      '<div class="card pad"><div class="huddle">' +
-      '<div><label>Focus label</label><input id="huddle-label" value="TODAY’S FOCUS"></div>' +
-      '<div><label>Focus title</label><input id="huddle-focus" value="' + data.huddle[0].replace(/"/g, '&quot;') + '"></div>' +
-      '<div><label>Focus details</label><textarea id="huddle-details">' + data.huddle[1] + '</textarea></div>' +
-      '</div><div class="hgrid">' +
-      '<div class="hbox"><label>Team Challenge</label><input id="huddle-challenge" value="' + data.huddle[2].replace(/"/g, '&quot;') + '"></div>' +
-      '<div class="hbox"><label>Recognition</label><input id="huddle-recognition" value="' + data.huddle[3].replace(/"/g, '&quot;') + '"></div>' +
-      '</div><button class="btn" id="save-huddle" style="margin-top:15px">Save Huddle</button></div>' +
+      '<div class="card pad"><div class="huddle"><div class="label">TODAY’S FOCUS</div><h2>' + data.huddle[0] + '</h2><div class="sub">' + data.huddle[1] + '</div></div>' +
+      '<div class="hgrid"><div class="hbox"><b>Team Challenge</b><strong>' + data.huddle[2] + '</strong></div><div class="hbox"><b>Recognition</b><strong>' + data.huddle[3] + '</strong></div></div></div>' +
       '<div class="card pad" style="margin-top:15px"><div class="head"><div><h2>Today’s action items</h2><p>Edit, add, or remove your action items.</p></div><button class="btn" id="add-action">+ Add Action</button></div>' + data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + action.replace(/"/g, '&quot;') + '"><button type="button" class="action-delete" data-delete-action="' + i + '">×</button></div>').join("") + '</div>';
-  }
-
-  function settingsPage() {
-    return top("Settings", "Set the rules once. Use them everywhere.") +
-      '<div class="card pad"><div class="head"><h2>Manager & KPI goals</h2></div><div class="two">' +
-      '<div><label>Manager name</label><input id="manager-name" value="' + data.manager + '"></div><div><label>Metric 1 title</label><input id="metric-title-0" value="' + data.metricTitles[0] + '"></div><div><label>Metric 2 title</label><input id="metric-title-1" value="' + data.metricTitles[1] + '"></div><div><label>Metric 3 title</label><input id="metric-title-2" value="' + data.metricTitles[2] + '"></div><div><label>Metric 4 title</label><input id="metric-title-3" value="' + data.metricTitles[3] + '"></div><div><label>Sales goal</label><input id="sales-goal" type="number" value="' + data.salesGoal + '"></div>' +
-      '<div><label>Conversion goal %</label><input id="conv-goal" type="number" value="' + data.convGoal + '"></div><div><label>Avg. transaction goal</label><input id="atv-goal" type="number" value="' + data.atvGoal + '"></div>' +
-      '<div><label>CX goal %</label><input id="cx-goal" type="number" value="' + data.cxGoal + '"></div></div><button class="btn" id="save-settings" style="margin-top:15px">Save Settings</button></div>';
   }
 
   const pages = {
