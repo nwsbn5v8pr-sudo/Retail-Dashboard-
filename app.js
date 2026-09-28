@@ -129,8 +129,8 @@
       '<div><strong>' + data.team.filter(x => x[1] === "On Track").length + '</strong><span>On Track</span></div>' +
       '<div><strong>' + data.team.filter(x => x[1] === "Need Coaching").length + '</strong><span>Need Coaching</span></div>' +
       '<div><strong>' + data.team.filter(x => x[1] === "Need Training").length + '</strong><span>Need Training</span></div>' +
-      '</div></div><div class="card pad"><div class="head"><div><h2>Today’s key actions</h2><p>Keep it short. Keep it moving.</p></div></div>' +
-      data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + action.replace(/"/g, '&quot;') + '"><button type="button" class="action-delete" data-delete-action="' + i + '">×</button></div>').join("") + '</div></div>';
+      '</div></div><button type="button" class="card pad attention-link" data-target="huddle" style="text-align:left;width:100%;border:0"><div class="head"><div><h2>Today’s key actions</h2><p>Tap to open Huddle and edit today’s actions.</p></div><span>›</span></div>' +
+      data.actions.map(action => '<div class="action"><span>' + action.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span></div>').join("") + '</button></div>';
   }
 
   function daily() {
