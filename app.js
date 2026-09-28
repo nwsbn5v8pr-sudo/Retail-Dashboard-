@@ -178,7 +178,7 @@
     return top("Today’s Team Huddle", "Align. Motivate. Win the day.") +
       '<div class="card pad"><div class="huddle"><div class="label">TODAY’S FOCUS</div><h2>' + data.huddle[0] + '</h2><div class="sub">' + data.huddle[1] + '</div></div>' +
       '<div class="hgrid"><div class="hbox"><b>Team Challenge</b><strong>' + data.huddle[2] + '</strong></div><div class="hbox"><b>Recognition</b><strong>' + data.huddle[3] + '</strong></div></div></div>' +
-      '<div class="card pad" style="margin-top:15px"><div class="head"><div><h2>Today’s action items</h2><p>Edit, add, or remove your action items.</p></div><button class="btn" id="add-action">+ Add Action</button></div>' + data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + action.replace(/"/g, '&quot;') + '"><button type="button" class="action-delete" data-delete-action="' + i + '">×</button></div>').join("") + '</div>';
+      '<div class="card pad" style="margin-top:15px"><div class="head"><h2>Today’s action items</h2></div><div class="action"><span class="check"></span>Review yesterday’s results</div><div class="action"><span class="check"></span>Share today’s focus</div><div class="action"><span class="check"></span>Ask for team commitments</div></div>';
   }
 
   const pages = {
