@@ -9,6 +9,7 @@
     convGoal: 20,
     atvGoal: 85,
     cxGoal: 90,
+    metricTitles: ["Sales", "Conversion", "Avg. Transaction", "Customer Experience"],
     days: [
       { sales: 9200, conv: 18, atv: 89, cx: 92 },
       { sales: 9800, conv: 17, atv: 84, cx: 90 },
@@ -62,6 +63,7 @@
         Array.isArray(saved.huddle) &&
         Array.isArray(saved.actions)
       ) {
+        saved.metricTitles = Array.isArray(saved.metricTitles) && saved.metricTitles.length === 4 ? saved.metricTitles : JSON.parse(JSON.stringify(defaults.metricTitles));
         return saved;
       }
     } catch (e) {}
@@ -115,10 +117,10 @@
 
     return top("Good Morning, " + data.manager + "!", "PEOPLE · PERFORMANCE · PROGRESS") +
       '<div class="grid4">' +
-      kpi("Sales", sales, data.salesGoal, "money", "daily") +
-      kpi("Conversion", conv, data.convGoal, undefined, "daily") +
-      kpi("Avg. Transaction", atv, data.atvGoal, "atv", "daily") +
-      kpi("Customer Experience", cx, data.cxGoal, undefined, "daily") +
+      kpi(data.metricTitles[0], sales, data.salesGoal, "money", "daily") +
+      kpi(data.metricTitles[1], conv, data.convGoal, undefined, "daily") +
+      kpi(data.metricTitles[2], atv, data.atvGoal, "atv", "daily") +
+      kpi(data.metricTitles[3], cx, data.cxGoal, undefined, "daily") +
       '</div>' +
       '<div class="split"><div class="card pad attention"><b style="color:#a74d42;font-size:12px;letter-spacing:.08em">WHAT NEEDS ATTENTION</b>' +
       attention.slice(0, 3).map((item, i) => '<button type="button" class="attn attention-link" data-target="' + (item[0] === "Training" ? "training" : item[0] === "Coaching" ? "coaching" : "daily") + '"><span class="num ' + (i ? "amber" : "") + '">' + (i + 1) + '</span><div><b>' + item[0] + '</b><small>' + item[1] + '</small></div><span>›</span></button>').join("") +
@@ -182,7 +184,7 @@
   function settingsPage() {
     return top("Settings", "Set the rules once. Use them everywhere.") +
       '<div class="card pad"><div class="head"><h2>Manager & KPI goals</h2></div><div class="two">' +
-      '<div><label>Manager name</label><input id="manager-name" value="' + data.manager + '"></div><div><label>Sales goal</label><input id="sales-goal" type="number" value="' + data.salesGoal + '"></div>' +
+      '<div><label>Manager name</label><input id="manager-name" value="' + data.manager + '"></div><div><label>Metric 1 title</label><input id="metric-title-0" value="' + data.metricTitles[0] + '"></div><div><label>Metric 2 title</label><input id="metric-title-1" value="' + data.metricTitles[1] + '"></div><div><label>Metric 3 title</label><input id="metric-title-2" value="' + data.metricTitles[2] + '"></div><div><label>Metric 4 title</label><input id="metric-title-3" value="' + data.metricTitles[3] + '"></div><div><label>Sales goal</label><input id="sales-goal" type="number" value="' + data.salesGoal + '"></div>' +
       '<div><label>Conversion goal %</label><input id="conv-goal" type="number" value="' + data.convGoal + '"></div><div><label>Avg. transaction goal</label><input id="atv-goal" type="number" value="' + data.atvGoal + '"></div>' +
       '<div><label>CX goal %</label><input id="cx-goal" type="number" value="' + data.cxGoal + '"></div></div><button class="btn" id="save-settings" style="margin-top:15px">Save Settings</button></div>';
   }
@@ -308,6 +310,7 @@
       data.convGoal = Number(document.getElementById("conv-goal").value) || 0;
       data.atvGoal = Number(document.getElementById("atv-goal").value) || 0;
       data.cxGoal = Number(document.getElementById("cx-goal").value) || 0;
+      data.metricTitles = [0, 1, 2, 3].map(i => document.getElementById("metric-title-" + i).value.trim() || defaults.metricTitles[i]);
       saveData();
       render();
     });
