@@ -88,11 +88,11 @@
     return '<div class="top"><div><h1>' + title + '</h1><div class="sub">' + subtitle + '</div></div><div class="week">Reporting week<b>Sep 28 – Oct 4, 2026</b></div></div>';
   }
 
-  function kpi(name, value, goal, type) {
+  function kpi(name, value, goal, type, target) {
     const percent = goal ? Math.min(100, (value / goal) * 100) : 0;
     let current = type === "money" ? money(value) : type === "atv" ? "$" + Number(value).toFixed(0) : Number(value).toFixed(1) + "%";
     let target = type === "money" ? money(goal) : type === "atv" ? "$" + goal : goal + "%";
-    return '<div class="card pad kpi"><b>' + name + '</b><div class="metric">' + current + '</div><div class="goal">' + target + ' goal</div><div class="bar"><i class="' + statusClass(value, goal) + '" style="width:' + percent + '%"></i></div></div>';
+    return '<button type="button" class="card pad kpi kpi-link" data-target="' + (target || "daily") + '"><b>' + name + '</b><div class="metric">' + current + '</div><div class="goal">' + target + ' goal</div><div class="bar"><i class="' + statusClass(value, goal) + '" style="width:' + percent + '%"></i></div></button>';
   }
 
   function dashboard() {
@@ -109,13 +109,13 @@
 
     return top("Good Morning, " + data.manager + "!", "PEOPLE · PERFORMANCE · PROGRESS") +
       '<div class="grid4">' +
-      kpi("Sales", sales, data.salesGoal, "money") +
-      kpi("Conversion", conv, data.convGoal) +
-      kpi("Avg. Transaction", atv, data.atvGoal, "atv") +
-      kpi("Customer Experience", cx, data.cxGoal) +
+      kpi("Sales", sales, data.salesGoal, "money", "daily") +
+      kpi("Conversion", conv, data.convGoal, undefined, "daily") +
+      kpi("Avg. Transaction", atv, data.atvGoal, "atv", "daily") +
+      kpi("Customer Experience", cx, data.cxGoal, undefined, "daily") +
       '</div>' +
       '<div class="split"><div class="card pad attention"><b style="color:#a74d42;font-size:12px;letter-spacing:.08em">WHAT NEEDS ATTENTION</b>' +
-      attention.slice(0, 3).map((item, i) => '<div class="attn"><span class="num ' + (i ? "amber" : "") + '">' + (i + 1) + '</span><div><b>' + item[0] + '</b><small>' + item[1] + '</small></div><span>›</span></div>').join("") +
+      attention.slice(0, 3).map((item, i) => '<button type="button" class="attn attention-link" data-target="' + (item[0] === "Training" ? "training" : item[0] === "Coaching" ? "coaching" : "daily") + '"><span class="num ' + (i ? "amber" : "") + '">' + (i + 1) + '</span><div><b>' + item[0] + '</b><small>' + item[1] + '</small></div><span>›</span></button>').join("") +
       '</div><div class="card pad focus"><div class="label">TODAY’S FOCUS</div><h2>' + data.huddle[0] + '</h2><div class="sub">' + data.huddle[1] + '</div></div></div>' +
       '<div class="two"><div class="card pad"><div class="head"><div><h2>Team at a glance</h2><p>' + data.team.length + ' team members</p></div></div><div class="mini">' +
       '<div><strong>' + data.team.filter(x => x[1] === "On Track").length + '</strong><span>On Track</span></div>' +
@@ -219,6 +219,10 @@
 
     navEl.querySelectorAll("[data-nav]").forEach(button => {
       button.addEventListener("click", () => go(button.dataset.nav));
+    });
+
+    pagesEl.querySelectorAll("[data-target]").forEach(button => {
+      button.addEventListener("click", () => go(button.dataset.target));
     });
 
     const addDay = document.getElementById("add-day");
