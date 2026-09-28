@@ -88,11 +88,11 @@
     return '<div class="top"><div><h1>' + title + '</h1><div class="sub">' + subtitle + '</div></div><div class="week">Reporting week<b>Sep 28 – Oct 4, 2026</b></div></div>';
   }
 
-  function kpi(name, value, goal, type, target) {
+  function kpi(name, value, goal, type, destination) {
     const percent = goal ? Math.min(100, (value / goal) * 100) : 0;
     let current = type === "money" ? money(value) : type === "atv" ? "$" + Number(value).toFixed(0) : Number(value).toFixed(1) + "%";
     let target = type === "money" ? money(goal) : type === "atv" ? "$" + goal : goal + "%";
-    return '<button type="button" class="card pad kpi kpi-link" data-target="' + (target || "daily") + '"><b>' + name + '</b><div class="metric">' + current + '</div><div class="goal">' + target + ' goal</div><div class="bar"><i class="' + statusClass(value, goal) + '" style="width:' + percent + '%"></i></div></button>';
+    return '<button type="button" class="card pad kpi kpi-link" data-target="' + (destination || "daily") + '"><b>' + name + '</b><div class="metric">' + current + '</div><div class="goal">' + target + ' goal</div><div class="bar"><i class="' + statusClass(value, goal) + '" style="width:' + percent + '%"></i></div></button>';
   }
 
   function dashboard() {
