@@ -181,6 +181,17 @@
       '<div class="card pad" style="margin-top:15px"><div class="head"><h2>Today’s action items</h2></div><div class="action"><span class="check"></span>Review yesterday’s results</div><div class="action"><span class="check"></span>Share today’s focus</div><div class="action"><span class="check"></span>Ask for team commitments</div></div>';
   }
 
+  function settingsPage() {
+    return top("Settings", "Set the rules once. Use them everywhere.") +
+      '<div class="card pad"><div class="head"><h2>Manager & KPI goals</h2></div><div class="two">' +
+      '<div><label>Manager name</label><input id="manager-name" value="' + data.manager + '"></div>' +
+      '<div><label>Metric 1 title</label><input id="metric-title-0" value="' + data.metricTitles[0] + '"></div><div><label>Metric 2 title</label><input id="metric-title-1" value="' + data.metricTitles[1] + '"></div>' +
+      '<div><label>Metric 3 title</label><input id="metric-title-2" value="' + data.metricTitles[2] + '"></div><div><label>Metric 4 title</label><input id="metric-title-3" value="' + data.metricTitles[3] + '"></div>' +
+      '<div><label>Sales goal</label><input id="sales-goal" type="number" value="' + data.salesGoal + '"></div><div><label>Conversion goal %</label><input id="conv-goal" type="number" value="' + data.convGoal + '"></div>' +
+      '<div><label>Avg. transaction goal</label><input id="atv-goal" type="number" value="' + data.atvGoal + '"></div><div><label>CX goal %</label><input id="cx-goal" type="number" value="' + data.cxGoal + '"></div></div>' +
+      '<button class="btn" id="save-settings" style="margin-top:15px">Save Settings</button></div>';
+  }
+
   const pages = {
     dashboard,
     daily,
