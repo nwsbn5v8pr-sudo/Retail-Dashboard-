@@ -129,8 +129,8 @@
       '<div><strong>' + data.team.filter(x => x[1] === "On Track").length + '</strong><span>On Track</span></div>' +
       '<div><strong>' + data.team.filter(x => x[1] === "Need Coaching").length + '</strong><span>Need Coaching</span></div>' +
       '<div><strong>' + data.team.filter(x => x[1] === "Need Training").length + '</strong><span>Need Training</span></div>' +
-      '</div></div><button type="button" class="card pad attention-link" data-target="huddle" style="text-align:left;width:100%;border:0"><div class="head"><div><h2>Today’s key actions</h2><p>Tap to open Huddle and edit today’s actions.</p></div><span>›</span></div>' +
-      data.actions.map(action => '<div class="action"><span>' + action.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</span></div>').join("") + '</button></div>';
+      '</div></div><div class="card pad"><div class="head"><div><h2>Today’s key actions</h2><p>Keep it short. Keep it moving.</p></div></div>' +
+      data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + action.replace(/"/g, '&quot;') + '"><button type="button" class="action-delete" data-delete-action="' + i + '">×</button></div>').join("") + '</div></div>';
   }
 
   function daily() {
@@ -187,10 +187,11 @@
       '<div><label>Manager name</label><input id="manager-name" value="' + data.manager + '"></div>' +
       '<div><label>Metric 1 title</label><input id="metric-title-0" value="' + data.metricTitles[0] + '"></div><div><label>Metric 2 title</label><input id="metric-title-1" value="' + data.metricTitles[1] + '"></div>' +
       '<div><label>Metric 3 title</label><input id="metric-title-2" value="' + data.metricTitles[2] + '"></div><div><label>Metric 4 title</label><input id="metric-title-3" value="' + data.metricTitles[3] + '"></div>' +
-      '<div><label>Sales goal</label><input id="sales-goal" type="number" value="' + data.salesGoal + '"></div><div><label>Conversion goal %</label><input id="conv-goal" type="number" value="' + data.convGoal + '"></div>' +
-      '<div><label>Avg. transaction goal</label><input id="atv-goal" type="number" value="' + data.atvGoal + '"></div><div><label>CX goal %</label><input id="cx-goal" type="number" value="' + data.cxGoal + '"></div></div>' +
-      '<button class="btn" id="save-settings" style="margin-top:15px">Save Settings</button></div>';
+      '<div><label>Sales goal</label><input id="sales-goal" type="number" value="' + data.salesGoal + '"></div>' +
+      '<div><label>Conversion goal %</label><input id="conv-goal" type="number" value="' + data.convGoal + '"></div><div><label>Avg. transaction goal</label><input id="atv-goal" type="number" value="' + data.atvGoal + '"></div>' +
+      '<div><label>CX goal %</label><input id="cx-goal" type="number" value="' + data.cxGoal + '"></div></div><button class="btn" id="save-settings" style="margin-top:15px">Save Settings</button></div>';
   }
+
 
   const pages = {
     dashboard,
