@@ -645,15 +645,15 @@
     const tIdx = todayIndex();
     return top("Daily Results", "Enter each day’s numbers. Your Dashboard updates instantly.") +
       '<div class="card pad"><div class="head"><div><h2>' + weekLabelFrom(data.weekStart) + '</h2><p>A new week starts automatically every Monday, and this week’s totals move to the trend below. Blank days don’t count toward averages.</p></div></div>' +
-      '<div class="table"><table><thead><tr><th>Day</th><th>' + esc(t[0]) + ' ($)</th><th>' + esc(t[1]) + ' (%)</th><th>' + esc(t[2]) + ' ($)</th><th>' + esc(t[3]) + ' (%)</th><th></th></tr></thead><tbody>' +
+      '<div class="table"><table class="fit day-table"><thead><tr><th>Day</th><th>' + esc(t[0]) + ' ($)</th><th>' + esc(t[1]) + ' (%)</th><th>' + esc(t[2]) + ' ($)</th><th>' + esc(t[3]) + ' (%)</th><th></th></tr></thead><tbody>' +
       data.days.map((day, i) => '<tr class="' + (i === tIdx ? "today-col" : i > tIdx ? "future" : "") + '"><td><b>' + WEEKDAYS[i] + '</b> <span class="date">' + shortDate(addDays(data.weekStart, i)) + '</span>' + (i === tIdx ? ' <span class="status neutral">Today</span>' : "") + '</td>' +
         ["sales", "conv", "atv", "cx"].map(f => '<td><input class="cell-input" data-day="' + i + '" data-field="' + f + '" type="number" inputmode="decimal" step="' + (f === "sales" ? "1" : ".1") + '" value="' + (Number(day[f]) || "") + '" placeholder="0" aria-label="' + WEEKDAYS[i] + ' ' + esc(t[["sales", "conv", "atv", "cx"].indexOf(f)]) + '"></td>').join("") +
         '<td>' + (Number(day.sales) || Number(day.conv) || Number(day.atv) || Number(day.cx) ? '<button type="button" class="action-delete" title="Clear this day" aria-label="Clear ' + WEEKDAYS[i] + '" data-clear-day="' + i + '">×</button>' : "") + '</td></tr>').join("") +
       '</tbody><tfoot><tr><td>Week</td><td>' + money(week.sales) + ' total</td><td>' + week.conv.toFixed(1) + '% avg</td><td>$' + week.atv.toFixed(0) + ' avg</td><td>' + week.cx.toFixed(1) + '% avg</td><td></td></tr></tfoot></table></div></div>' +
       '<div class="card pad mt"><div class="head"><div><h2>Weekly ' + esc(t[0].toLowerCase()) + ' trend</h2><p>Each finished week is saved here automatically on Monday. Tap a week’s name to rename it.</p></div></div>' +
       barChart(items, data.salesGoal, "Weekly goal " + money(data.salesGoal)) +
-      (data.history.length ? '<div class="table mt"><table><thead><tr><th>Week</th><th>' + esc(t[0]) + '</th><th>' + esc(t[1]) + '</th><th>' + esc(t[2]) + '</th><th>' + esc(t[3]) + '</th><th></th></tr></thead><tbody>' +
-        data.history.map((h, i) => ({ h: h, i: i })).reverse().map(r => '<tr><td>' + cell("history", r.i, "label", "text") + '</td><td>' + money(r.h.sales) + '</td><td>' + Number(r.h.conv).toFixed(1) + '%</td><td>$' + Number(r.h.atv).toFixed(0) + '</td><td>' + Number(r.h.cx).toFixed(1) + '%</td>' + deleteCell("history", r.i) + '</tr>').join("") +
+      (data.history.length ? '<div class="table mt"><table class="fit week-table"><thead><tr><th>Week</th><th>' + esc(t[0]) + '</th><th>' + esc(t[1]) + '</th><th>' + esc(t[2]) + '</th><th>' + esc(t[3]) + '</th><th></th></tr></thead><tbody>' +
+        data.history.map((h, i) => ({ h: h, i: i })).reverse().map(r => '<tr><td><button type="button" class="link week-name" data-rename-week="' + r.i + '" aria-label="Rename week ' + esc(r.h.label) + '"><b>' + esc(r.h.label || "Unnamed week") + '</b></button></td><td>' + money(r.h.sales) + '</td><td>' + Number(r.h.conv).toFixed(1) + '%</td><td>$' + Number(r.h.atv).toFixed(0) + '</td><td>' + Number(r.h.cx).toFixed(1) + '%</td>' + deleteCell("history", r.i) + '</tr>').join("") +
         '</tbody></table></div>' : '<div class="notice">No finished weeks yet.</div>') +
       '</div>';
   }
@@ -970,6 +970,16 @@
     pagesEl.querySelectorAll("[data-day]").forEach(input => {
       input.addEventListener("change", () => {
         data.days[Number(input.dataset.day)][input.dataset.field] = Math.max(0, Number(input.value) || 0);
+        saveData();
+        render();
+      });
+    });
+    pagesEl.querySelectorAll("[data-rename-week]").forEach(button => {
+      button.addEventListener("click", () => {
+        const week = data.history[Number(button.dataset.renameWeek)];
+        const name = window.prompt("Rename this week", week.label);
+        if (name === null || !name.trim()) return;
+        week.label = name.trim();
         saveData();
         render();
       });
