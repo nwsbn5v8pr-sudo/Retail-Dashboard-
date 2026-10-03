@@ -405,6 +405,26 @@
     return hours > 0 && hours <= 16 ? hours : 0;
   }
 
+  // "7am-3:30pm" -> "7-3:30", "9:00-17:00" -> "9-5": the shortest form that reads back as the same shift.
+  function compactShift(text) {
+    const raw = String(text || "").trim();
+    const m = raw.toLowerCase().replace(/\s+/g, "").match(/^(\d{1,2})(?::(\d{2}))?(am?|pm?)?(?:-|–|to)(\d{1,2})(?::(\d{2}))?(am?|pm?)?$/);
+    if (!m) return raw;
+    const short = (h, min) => (Number(h) % 12 || 12) + (min && min !== "00" ? ":" + min : "");
+    const candidate = short(m[1], m[2]) + "-" + short(m[4], m[5]);
+    return candidate.length < raw.length && shiftStart(candidate) === shiftStart(raw) && shiftHours(candidate) === shiftHours(raw) ? candidate : raw;
+  }
+
+  function shiftStart(text) {
+    const m = String(text || "").toLowerCase().replace(/\s+/g, "").match(/^(\d{1,2})(?::(\d{2}))?(am?|pm?)?(?:-|–|to)/);
+    if (!m) return null;
+    let start = Number(m[1]) % 12 + Number(m[2] || 0) / 60;
+    if (m[3] && m[3][0] === "p") start += 12;
+    if (!m[3] && Number(m[1]) === 12) start = 12 + Number(m[2] || 0) / 60;
+    if (!m[3] && start < 6) start += 12;
+    return start;
+  }
+
   function memberHours(member) {
     return member[4].reduce((sum, s) => sum + shiftHours(s), 0);
   }
@@ -787,8 +807,8 @@
     return top("Schedule", "Who’s working when. Type shifts like 9-5, 10:30-7 or Off.") +
       (data.scheduleCopied ? '<div class="notice warn-notice"><span>These shifts were carried over from last week. Update anything that changed, or tap Clear Schedule to start over.</span><button type="button" class="btn alt small" id="schedule-ok">Looks right</button></div>' : "") +
       '<div class="card pad' + (data.scheduleCopied ? " mt" : "") + '"><div class="head"><div><h2>Shifts for ' + weekLabelFrom(data.weekStart) + '</h2><p>' + total + ' total hours scheduled. Today’s column is highlighted.</p></div><div class="btn-row"><button type="button" class="btn alt" id="clear-schedule">Clear Schedule</button><button type="button" class="btn" id="print-page">Print</button></div></div>' +
-      (data.team.length ? '<div class="table"><table><thead><tr><th>Team member</th>' + WEEKDAYS.map((d, i) => '<th class="' + (i === tIdx ? "today-col" : "") + '">' + d + '</th>').join("") + '<th>Hours</th></tr></thead><tbody>' +
-        data.team.map((m, r) => '<tr><td>' + personLink(m[0]) + '</td>' + WEEKDAYS.map((d, i) => '<td class="' + (i === tIdx ? "today-col" : "") + '"><input class="shift" data-shift="' + r + ':' + i + '" value="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + esc(m[0]) + ' ' + d + '"></td>').join("") + '<td><b>' + memberHours(m) + '</b></td></tr>').join("") +
+      (data.team.length ? '<div class="table sched-wrap"><table class="fit sched-table"><thead><tr><th>Team member</th>' + WEEKDAYS.map((d, i) => '<th class="' + (i === tIdx ? "today-col" : "") + '">' + d + '</th>').join("") + '<th>Hours</th></tr></thead><tbody>' +
+        data.team.map((m, r) => '<tr><td>' + personLink(m[0]) + '</td>' + WEEKDAYS.map((d, i) => '<td class="' + (i === tIdx ? "today-col" : "") + '"><input class="shift" data-shift="' + r + ':' + i + '" value="' + esc(m[4][i]) + '" title="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + esc(m[0]) + ' ' + d + '"></td>').join("") + '<td><b>' + memberHours(m) + '</b></td></tr>').join("") +
         '</tbody><tfoot><tr><td>Working</td>' + counts.map((c, i) => '<td class="' + (i === tIdx ? "today-col" : "") + '">' + c + '</td>').join("") + '<td>' + total + '</td></tr></tfoot></table></div>' : '<div class="notice">Add team members on the Team tab, then build their schedule here.</div>') +
       '</div>';
   }
@@ -910,11 +930,22 @@
       '<button class="nav ' + (key === page ? "active" : "") + '" data-nav="' + key + '">' + labels[key] + '</button>'
     ).join("") + '<button class="nav theme-toggle" id="theme-toggle" title="Change light or dark mode">☾ Theme: ' + themeNames[data.theme] + '</button>';
     bindEvents(pagesEl, navEl);
+    pagesEl.querySelectorAll(".sched-table .shift").forEach(fitShiftText);
     if (focusAfterRender) {
       const target = document.querySelector(focusAfterRender[0]) ;
       const usable = target && !target.disabled ? target : document.querySelector(focusAfterRender[1]);
       if (usable) usable.focus();
       focusAfterRender = null;
+    }
+  }
+
+  // Long shifts ("10pm-6am") shrink their own text a little so they still show in full in narrow day columns.
+  function fitShiftText(input) {
+    input.style.fontSize = "";
+    let size = parseFloat(getComputedStyle(input).fontSize);
+    while (input.scrollWidth > input.clientWidth + 1 && size > 9.5) {
+      size -= 0.5;
+      input.style.fontSize = size + "px";
     }
   }
 
@@ -1074,9 +1105,10 @@
     });
 
     pagesEl.querySelectorAll("[data-shift]").forEach(input => {
+      if (input.closest(".sched-table")) input.addEventListener("input", () => fitShiftText(input));
       input.addEventListener("change", () => {
         const parts = input.dataset.shift.split(":");
-        data.team[Number(parts[0])][4][Number(parts[1])] = input.value.trim();
+        data.team[Number(parts[0])][4][Number(parts[1])] = compactShift(input.value);
         data.scheduleCopied = false;
         saveData();
         render();
