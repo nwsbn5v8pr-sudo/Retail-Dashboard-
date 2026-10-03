@@ -500,7 +500,6 @@
       '<div><label>Name</label>' + cell("team", index, 0, "text", "Name") + '</div>' +
       '<div><label>Status</label>' + cell("team", index, 1, "status") + '</div>' +
       '<div><label>Focus area</label>' + cell("team", index, 2, "text", "e.g. Product knowledge") + '</div>' +
-      '<div><label>Training %</label>' + cell("team", index, 3, "percent") + progressBar(Number(m[3]) || 0) + '</div>' +
       '</div></div>' +
       '<div class="card pad mt"><div class="head"><div><h2>This week’s schedule</h2><p>' + memberHours(m) + ' hours scheduled</p></div></div><div class="schedule-mini">' +
       WEEKDAYS.map((d, i) => '<div class="' + (i === tIdx ? "today-col" : "") + '"><label>' + d + '</label><input class="shift" data-shift="' + index + ':' + i + '" value="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + d + ' shift"></div>').join("") +
