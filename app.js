@@ -24,6 +24,27 @@
     return (new Date().getDay() + 6) % 7;
   }
 
+  function mondayIso(offsetWeeks) {
+    const t = new Date();
+    return isoDate(new Date(t.getFullYear(), t.getMonth(), t.getDate() - todayIndex() + 7 * (offsetWeeks || 0)));
+  }
+
+  function addDays(iso, days) {
+    const d = new Date(iso + "T00:00:00");
+    d.setDate(d.getDate() + days);
+    return isoDate(d);
+  }
+
+  function weekLabelFrom(startIso) {
+    const fmt = iso => new Date(iso + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const end = addDays(startIso, 6);
+    return fmt(startIso) + " – " + fmt(end) + ", " + end.slice(0, 4);
+  }
+
+  function emptyWeek() {
+    return WEEKDAYS.map(() => ({ sales: 0, conv: 0, atv: 0, cx: 0 }));
+  }
+
   function weekLabel(offsetWeeks) {
     const t = new Date();
     const start = new Date(t.getFullYear(), t.getMonth(), t.getDate() - todayIndex() + 7 * (offsetWeeks || 0));
@@ -101,11 +122,12 @@
       atvGoal: 85,
       cxGoal: 90,
       metricTitles: metricDefaults.slice(),
-      days: [
-        { sales: 7200, conv: 18, atv: 89, cx: 92 },
-        { sales: 6800, conv: 17, atv: 84, cx: 90 },
-        { sales: 7600, conv: 18, atv: 90, cx: 94 }
-      ],
+      weekStart: mondayIso(0),
+      scheduleWeek: mondayIso(0),
+      scheduleCopied: false,
+      // Sample results fill this week up to today.
+      days: [[7200, 18, 89, 92], [6800, 17, 84, 90], [7600, 18, 90, 94], [7900, 19, 86, 91], [8400, 20, 88, 93], [9800, 21, 91, 95], [8800, 19, 87, 92]]
+        .map((v, i) => i <= todayIndex() ? { sales: v[0], conv: v[1], atv: v[2], cx: v[3] } : { sales: 0, conv: 0, atv: 0, cx: 0 }),
       history: [
         { label: weekLabel(-4), sales: 46200, days: 7, conv: 17.1, atv: 83, cx: 89 },
         { label: weekLabel(-3), sales: 48900, days: 7, conv: 18.0, atv: 86, cx: 91 },
@@ -158,7 +180,7 @@
     const blank = makeSample();
     blank.manager = "";
     blank.welcomeDismissed = true;
-    blank.days = [{ sales: 0, conv: 0, atv: 0, cx: 0 }];
+    blank.days = emptyWeek();
     ["history", "team", "coaching", "training", "goals", "notes", "actions"].forEach(key => { blank[key] = []; });
     blank.huddle = ["Set today’s focus in Settings", "", "", ""];
     return blank;
@@ -189,9 +211,29 @@
       if (!Array.isArray(row[4])) row[4] = [];
       while (row[4].length < 7) row[4].push("");
     });
+    // Results used to be a free list of rows; now there is one row per day, Monday to Sunday.
+    if (!saved.weekStart) {
+      const rows = saved.days.map(d => ({ sales: Number(d.sales) || 0, conv: Number(d.conv) || 0, atv: Number(d.atv) || 0, cx: Number(d.cx) || 0 }));
+      if (rows.length > 7) {
+        const active = rows.filter(d => d.sales || d.conv || d.atv || d.cx);
+        const avg = key => active.length ? Math.round(active.reduce((sum, d) => sum + d[key], 0) / active.length * 10) / 10 : 0;
+        if (active.length) saved.history.push({ label: "Earlier results", sales: active.reduce((sum, d) => sum + d.sales, 0), days: active.length, conv: avg("conv"), atv: avg("atv"), cx: avg("cx") });
+        saved.days = emptyWeek();
+      } else {
+        saved.days = rows.concat(emptyWeek()).slice(0, 7);
+      }
+      saved.weekStart = mondayIso(0);
+    }
+    if (!saved.scheduleWeek) saved.scheduleWeek = mondayIso(0);
+    saved.scheduleCopied = !!saved.scheduleCopied;
+    saved.notes = saved.notes.filter(n => !isEmptyNote(n));
     saved.coaching.forEach(row => { row[3] = toIso(row[3]); });
     saved.training.forEach(row => { row[4] = toIso(row[4]); });
     return saved;
+  }
+
+  function isEmptyNote(n) {
+    return !String(n.notes || "").trim() && !String(n.commitments || "").trim() && !n.followUp;
   }
 
   function loadData() {
@@ -202,14 +244,73 @@
     return makeSample();
   }
 
+  // Private Browsing (or storage turned off) means nothing can be saved; the page warns about it.
+  let storageOk = (() => {
+    try {
+      localStorage.setItem("mpt-storage-test", "1");
+      localStorage.removeItem("mpt-storage-test");
+      return true;
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  let toastTimer = null;
   let data = loadData();
+  rollWeek();
+  // Store the upgraded/rolled-over copy right away so older saved data is only converted once.
+  if (storageOk) saveData();
   let notesFilter = "";
   let editingDashboard = false;
+  let lastRoute = null;
+  let focusAfterRender = null;
 
   function saveData() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (e) {}
+    } catch (e) {
+      if (storageOk) {
+        storageOk = false;
+        toast("Couldn’t save your changes. Download a backup before closing this tab.");
+      }
+    }
+  }
+
+  function toast(message) {
+    let el = document.getElementById("toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "toast";
+      el.className = "toast";
+      el.setAttribute("role", "status");
+      el.setAttribute("aria-live", "polite");
+      document.body.appendChild(el);
+    }
+    el.textContent = message;
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+  }
+
+  // Every Monday: last week's results move to the trend, and the schedule carries over for review.
+  function rollWeek() {
+    const current = mondayIso(0);
+    let changed = false;
+    if (data.weekStart !== current) {
+      const week = weekTotals();
+      if (data.weekStart < current && week.days) {
+        data.history.push({ label: weekLabelFrom(data.weekStart), sales: week.sales, days: week.days, conv: Math.round(week.conv * 10) / 10, atv: Math.round(week.atv * 10) / 10, cx: Math.round(week.cx * 10) / 10 });
+      }
+      if (data.weekStart < current) data.days = emptyWeek();
+      data.weekStart = current;
+      changed = true;
+    }
+    if (data.scheduleWeek !== current) {
+      if (data.scheduleWeek < current && data.team.some(m => m[4].some(s => String(s).trim()))) data.scheduleCopied = true;
+      data.scheduleWeek = current;
+      changed = true;
+    }
+    if (changed) saveData();
   }
 
   function downloadBackup() {
@@ -238,8 +339,9 @@
         if (!window.confirm("Replace everything in this tracker with the backup from " + (parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleDateString() : "this file") + "?")) return;
         data = normalize(restored);
         data.welcomeDismissed = true;
+        rollWeek();
         saveData();
-        window.alert("Backup restored.");
+        toast("Backup restored.");
         go("dashboard");
         render();
       } catch (e) {
@@ -307,13 +409,31 @@
     return member[4].reduce((sum, s) => sum + shiftHours(s), 0);
   }
 
+  const NOT_WORKING = /^(off|day off|pto|vac|vacation|sick|holiday|leave|loa|r\/?o|req(uest(ed)?)? ?off|unavailable|n\/?a|x|-|—)$/i;
+
   function isWorking(shift) {
-    const s = String(shift || "").trim().toLowerCase();
-    return !!s && s !== "off" && s !== "-" && s !== "x";
+    const s = String(shift || "").trim();
+    return !!s && !NOT_WORKING.test(s);
   }
 
   function teamIndex(name) {
     return data.team.findIndex(m => m[0] === name);
+  }
+
+  function nameTaken(name, exceptIndex) {
+    const key = String(name).trim().toLowerCase();
+    return data.team.some((m, i) => i !== exceptIndex && String(m[0]).trim().toLowerCase() === key);
+  }
+
+  function memberRoute(name) {
+    return "member/" + encodeURIComponent(name);
+  }
+
+  function memberIndexFromRoute(part) {
+    const name = decodeURIComponent(part || "");
+    const i = teamIndex(name);
+    // Older links used the row number.
+    return i >= 0 ? i : /^\d+$/.test(name) && data.team[Number(name)] ? Number(name) : -1;
   }
 
   function coachingOverdue(row) {
@@ -397,7 +517,7 @@
 
   function personLink(name) {
     const i = teamIndex(name);
-    return i < 0 ? '<b>' + esc(name || "—") + '</b>' : '<button type="button" class="link" data-target="member/' + i + '"><b>' + esc(name) + '</b></button>';
+    return i < 0 ? '<b>' + esc(name || "—") + '</b>' : '<button type="button" class="link" data-target="' + esc(memberRoute(name)) + '"><b>' + esc(name) + '</b></button>';
   }
 
   function tile(title, value, note) {
@@ -475,14 +595,14 @@
         attention.slice(0, 4).map((item, i) => '<button type="button" class="attn attention-link" data-target="' + item[2] + '"><span class="num ' + (i ? "amber" : "") + '">' + (i + 1) + '</span><div><b>' + esc(item[0]) + '</b><small>' + item[1] + '</small></div><span aria-hidden="true">›</span></button>').join("") +
         '</div>',
       focus: () => '<div class="card pad focus"><div class="label">TODAY’S FOCUS</div><h2>' + esc(data.huddle[0]) + '</h2><div class="sub">' + esc(data.huddle[1]) + '</div></div>',
-      working: () => '<div class="card pad"><div class="head"><div><h2>Working today</h2><p>' + ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][todayIndex()] + ' · ' + working.length + (working.length === 1 ? " person" : " people") + '</p></div><button type="button" class="btn alt small" data-target="schedule">Schedule</button></div>' +
+      working: () => '<div class="card pad"><div class="head"><div><h2>Working today</h2><p>' + ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][todayIndex()] + ' · ' + working.length + (working.length === 1 ? " person" : " people") + (data.scheduleCopied ? " · carried over from last week" : "") + '</p></div><button type="button" class="btn alt small" data-target="schedule">Schedule</button></div>' +
         (working.length ? working.map(m => '<div class="list-row">' + personLink(m[0]) + '<span class="status neutral">' + esc(m[4][todayIndex()]) + '</span></div>').join("") : '<div class="empty">No one is scheduled today. Add shifts on the Schedule tab.</div>') +
         '</div>',
       team: () => '<div class="card pad"><div class="head"><div><h2>Team at a glance</h2><p>' + data.team.length + (data.team.length === 1 ? " team member" : " team members") + ' · tap a name for their profile</p></div></div><div class="mini">' +
         '<div><strong>' + data.team.filter(x => x[1] === "On Track").length + '</strong><span>On Track</span></div>' +
         '<div><strong>' + data.team.filter(x => x[1] === "Needs Coaching").length + '</strong><span>Needs Coaching</span></div>' +
         '<div><strong>' + data.team.filter(x => x[1] === "Needs Training").length + '</strong><span>Needs Training</span></div></div>' +
-        '<div class="people">' + data.team.map((m, i) => '<button type="button" class="chip" data-target="member/' + i + '"><span class="dot ' + (statusTone("team", m[1]) === "good" ? "" : statusTone("team", m[1])) + '"></span>' + esc(m[0] || "Unnamed") + '</button>').join("") + '</div></div>',
+        '<div class="people">' + data.team.map(m => '<button type="button" class="chip" data-target="' + esc(memberRoute(m[0])) + '"><span class="dot ' + (statusTone("team", m[1]) === "good" ? "" : statusTone("team", m[1])) + '"></span>' + esc(m[0] || "Unnamed") + '</button>').join("") + '</div></div>',
       upcoming: () => '<div class="card pad"><div class="head"><div><h2>Coming up</h2><p>Due in the next 7 days, plus anything overdue.</p></div></div>' +
         (soon.length ? soon.map(x => '<button type="button" class="list-row row-link" data-target="' + x.target + '"><div><b>' + esc(x.what) + '</b><small>' + esc(x.who || "") + '</small></div><span class="status ' + x.tag[1] + '">' + esc(x.tag[0]) + '</span></button>').join("") : '<div class="empty">Nothing due this week.</div>') +
         '</div>',
@@ -522,14 +642,15 @@
     const recent = data.history.slice(-6);
     const items = recent.map(h => ({ label: String(h.label).split(" –")[0], value: Number(h.sales) || 0, tip: h.label + ": " + money(h.sales) })).concat([{ label: "This week", value: week.sales, partial: true, showValue: money(week.sales), tip: "This week so far: " + money(week.sales) + " (" + week.days + (week.days === 1 ? " day" : " days") + ")" }]);
     const t = data.metricTitles;
+    const tIdx = todayIndex();
     return top("Daily Results", "Enter each day’s numbers. Your Dashboard updates instantly.") +
-      '<div class="card pad"><div class="head"><div><h2>This week</h2><p>Leave a day blank until you have its numbers. Blank days don’t count toward averages.</p></div><div class="btn-row"><button class="btn alt" id="new-week">Start New Week</button><button class="btn" id="add-day">+ Add Day</button></div></div>' +
+      '<div class="card pad"><div class="head"><div><h2>' + weekLabelFrom(data.weekStart) + '</h2><p>A new week starts automatically every Monday, and this week’s totals move to the trend below. Blank days don’t count toward averages.</p></div></div>' +
       '<div class="table"><table><thead><tr><th>Day</th><th>' + esc(t[0]) + ' ($)</th><th>' + esc(t[1]) + ' (%)</th><th>' + esc(t[2]) + ' ($)</th><th>' + esc(t[3]) + ' (%)</th><th></th></tr></thead><tbody>' +
-      data.days.map((day, i) => '<tr><td><b>' + (WEEKDAYS[i] || "Day " + (i + 1)) + '</b></td>' +
-        ["sales", "conv", "atv", "cx"].map(f => '<td><input class="cell-input" data-day="' + i + '" data-field="' + f + '" type="number" step="' + (f === "sales" ? "1" : ".1") + '" value="' + (Number(day[f]) || "") + '" placeholder="0"></td>').join("") +
-        '<td><button type="button" class="action-delete" title="Delete day" aria-label="Delete day" data-delete-day="' + i + '">×</button></td></tr>').join("") +
+      data.days.map((day, i) => '<tr class="' + (i === tIdx ? "today-col" : i > tIdx ? "future" : "") + '"><td><b>' + WEEKDAYS[i] + '</b> <span class="date">' + shortDate(addDays(data.weekStart, i)) + '</span>' + (i === tIdx ? ' <span class="status neutral">Today</span>' : "") + '</td>' +
+        ["sales", "conv", "atv", "cx"].map(f => '<td><input class="cell-input" data-day="' + i + '" data-field="' + f + '" type="number" inputmode="decimal" step="' + (f === "sales" ? "1" : ".1") + '" value="' + (Number(day[f]) || "") + '" placeholder="0" aria-label="' + WEEKDAYS[i] + ' ' + esc(t[["sales", "conv", "atv", "cx"].indexOf(f)]) + '"></td>').join("") +
+        '<td>' + (Number(day.sales) || Number(day.conv) || Number(day.atv) || Number(day.cx) ? '<button type="button" class="action-delete" title="Clear this day" aria-label="Clear ' + WEEKDAYS[i] + '" data-clear-day="' + i + '">×</button>' : "") + '</td></tr>').join("") +
       '</tbody><tfoot><tr><td>Week</td><td>' + money(week.sales) + ' total</td><td>' + week.conv.toFixed(1) + '% avg</td><td>$' + week.atv.toFixed(0) + ' avg</td><td>' + week.cx.toFixed(1) + '% avg</td><td></td></tr></tfoot></table></div></div>' +
-      '<div class="card pad mt"><div class="head"><div><h2>Weekly ' + esc(t[0].toLowerCase()) + ' trend</h2><p>Each finished week is saved here when you click “Start New Week”.</p></div></div>' +
+      '<div class="card pad mt"><div class="head"><div><h2>Weekly ' + esc(t[0].toLowerCase()) + ' trend</h2><p>Each finished week is saved here automatically on Monday. Tap a week’s name to rename it.</p></div></div>' +
       barChart(items, data.salesGoal, "Weekly goal " + money(data.salesGoal)) +
       (data.history.length ? '<div class="table mt"><table><thead><tr><th>Week</th><th>' + esc(t[0]) + '</th><th>' + esc(t[1]) + '</th><th>' + esc(t[2]) + '</th><th>' + esc(t[3]) + '</th><th></th></tr></thead><tbody>' +
         data.history.map((h, i) => ({ h: h, i: i })).reverse().map(r => '<tr><td>' + cell("history", r.i, "label", "text") + '</td><td>' + money(r.h.sales) + '</td><td>' + Number(r.h.conv).toFixed(1) + '%</td><td>$' + Number(r.h.atv).toFixed(0) + '</td><td>' + Number(r.h.cx).toFixed(1) + '%</td>' + deleteCell("history", r.i) + '</tr>').join("") +
@@ -541,7 +662,7 @@
     return top("Team", "Everyone on your team at a glance. Open a profile for the full picture.") +
       '<div class="card pad"><div class="head"><div><h2>Team members</h2><p>Click any cell to edit. Changing a name updates it everywhere.</p></div><button class="btn" id="add-team">+ Add Team Member</button></div>' +
       (data.team.length ? '<div class="table"><table><thead><tr><th>Name</th><th>Status</th><th>Focus area</th><th>Hours this week</th><th></th><th></th></tr></thead><tbody>' +
-        data.team.map((x, i) => '<tr><td>' + cell("team", i, 0, "text", "Name") + '</td><td>' + cell("team", i, 1, "status") + '</td><td>' + cell("team", i, 2, "text", "e.g. Product knowledge") + '</td><td>' + memberHours(x) + '</td><td><button type="button" class="btn alt small" data-target="member/' + i + '">Profile ›</button></td>' + deleteCell("team", i) + '</tr>').join("") +
+        data.team.map((x, i) => '<tr><td>' + cell("team", i, 0, "text", "Name") + '</td><td>' + cell("team", i, 1, "status") + '</td><td>' + cell("team", i, 2, "text", "e.g. Product knowledge") + '</td><td>' + memberHours(x) + '</td><td><button type="button" class="btn alt small" data-target="' + esc(memberRoute(x[0])) + '">Profile ›</button></td>' + deleteCell("team", i) + '</tr>').join("") +
         '</tbody></table></div>' : '<div class="notice">No team members yet. Click “+ Add Team Member” to get started.</div>') +
       '</div>';
   }
@@ -664,7 +785,8 @@
     const counts = WEEKDAYS.map((d, i) => data.team.filter(m => isWorking(m[4][i])).length);
     const total = data.team.reduce((sum, m) => sum + memberHours(m), 0);
     return top("Schedule", "Who’s working when. Type shifts like 9-5, 10:30-7 or Off.") +
-      '<div class="card pad"><div class="head"><div><h2>This week’s shifts</h2><p>' + total + ' total hours scheduled. Today’s column is highlighted.</p></div><div class="btn-row"><button type="button" class="btn alt" id="clear-schedule">Clear Schedule</button><button type="button" class="btn" id="print-page">Print</button></div></div>' +
+      (data.scheduleCopied ? '<div class="notice warn-notice"><span>These shifts were carried over from last week. Update anything that changed, or tap Clear Schedule to start over.</span><button type="button" class="btn alt small" id="schedule-ok">Looks right</button></div>' : "") +
+      '<div class="card pad' + (data.scheduleCopied ? " mt" : "") + '"><div class="head"><div><h2>Shifts for ' + weekLabelFrom(data.weekStart) + '</h2><p>' + total + ' total hours scheduled. Today’s column is highlighted.</p></div><div class="btn-row"><button type="button" class="btn alt" id="clear-schedule">Clear Schedule</button><button type="button" class="btn" id="print-page">Print</button></div></div>' +
       (data.team.length ? '<div class="table"><table><thead><tr><th>Team member</th>' + WEEKDAYS.map((d, i) => '<th class="' + (i === tIdx ? "today-col" : "") + '">' + d + '</th>').join("") + '<th>Hours</th></tr></thead><tbody>' +
         data.team.map((m, r) => '<tr><td>' + personLink(m[0]) + '</td>' + WEEKDAYS.map((d, i) => '<td class="' + (i === tIdx ? "today-col" : "") + '"><input class="shift" data-shift="' + r + ':' + i + '" value="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + esc(m[0]) + ' ' + d + '"></td>').join("") + '<td><b>' + memberHours(m) + '</b></td></tr>').join("") +
         '</tbody><tfoot><tr><td>Working</td>' + counts.map((c, i) => '<td class="' + (i === tIdx ? "today-col" : "") + '">' + c + '</td>').join("") + '<td>' + total + '</td></tr></tfoot></table></div>' : '<div class="notice">Add team members on the Team tab, then build their schedule here.</div>') +
@@ -685,12 +807,12 @@
   }
 
   function settingsPage() {
-    const field = (label, id, value, type, placeholder) => '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '"' + (type ? ' type="' + type + '"' : "") + (placeholder ? ' placeholder="' + esc(placeholder) + '"' : "") + ' value="' + esc(value) + '"></div>';
+    const field = (label, id, value, type, placeholder) => '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" data-setting' + (type ? ' type="' + type + '" inputmode="decimal" min="0"' : "") + (placeholder ? ' placeholder="' + esc(placeholder) + '"' : "") + ' value="' + esc(value) + '"></div>';
     const t = data.metricTitles;
     return top("Settings", "Set it up once. It’s used everywhere.") +
       '<div class="card pad"><div class="head"><div><h2>You &amp; your store</h2></div></div><div class="two">' +
       field("Your name", "manager-name", data.manager) + field("Store name", "store-name", data.store, "", "e.g. Store #214") +
-      '</div><div class="head" style="margin-top:8px"><div><h2>Metrics &amp; weekly goals</h2><p>Rename the four metrics to match what your company tracks.</p></div></div><div class="two">' +
+      '</div><div class="head" style="margin-top:8px"><div><h2>Metrics &amp; weekly goals</h2><p>Rename the four metrics to match what your company tracks. Changes save automatically.</p></div></div><div class="two">' +
       field("Metric 1 name (dollars)", "metric-title-0", t[0]) + field(esc(t[0]) + " goal for the week ($)", "sales-goal", data.salesGoal, "number") +
       field("Metric 2 name (percent)", "metric-title-1", t[1]) + field(esc(t[1]) + " goal (%)", "conv-goal", data.convGoal, "number") +
       field("Metric 3 name (dollars)", "metric-title-2", t[2]) + field(esc(t[2]) + " goal ($)", "atv-goal", data.atvGoal, "number") +
@@ -698,7 +820,7 @@
       '</div><button class="btn" id="save-settings">Save Settings</button></div>' +
       '<div class="card pad mt"><div class="head"><div><h2>Appearance</h2><p>“Automatic” matches your device’s light or dark setting.</p></div></div>' +
       '<div class="btn-row">' + [["auto", "Automatic"], ["light", "Light"], ["dark", "Dark"]].map(o => '<button type="button" class="btn ' + (data.theme === o[0] ? "" : "alt") + '" data-theme-choice="' + o[0] + '">' + o[1] + '</button>').join("") + '</div></div>' +
-      '<div class="card pad mt"><div class="head"><div><h2>Today’s huddle</h2><p>Shown on the Dashboard and the Huddle tab.</p></div></div><div class="two">' +
+      '<div class="card pad mt"><div class="head"><div><h2>Today’s huddle</h2><p>Shown on the Dashboard and the Huddle tab. Changes save automatically.</p></div></div><div class="two">' +
       ["Focus headline", "Focus details", "Team challenge", "Recognition"].map((label, i) => field(label, "huddle-" + i, data.huddle[i])).join("") +
       '</div><button class="btn" id="save-huddle">Save Huddle</button></div>' +
       '<div class="card pad mt"><div class="head"><div><h2>Your data</h2><p>Your tracker saves automatically in this browser on this device. Download a backup every week, and use it to move your tracker to another computer or browser.</p></div></div>' +
@@ -768,17 +890,32 @@
     const isMember = parts[0] === "member";
     const page = isMember ? "team" : pages[parts[0]] ? parts[0] : "dashboard";
     if (page !== "dashboard") editingDashboard = false;
+    rollWeek();
+    // Leaving a page tidies away 1:1 notes that were started but never written.
+    if (route !== lastRoute) {
+      const before = data.notes.length;
+      data.notes = data.notes.filter(n => !isEmptyNote(n));
+      if (data.notes.length !== before) saveData();
+      lastRoute = route;
+    }
     const pagesEl = document.getElementById("pages");
     const navEl = document.getElementById("nav");
     if (!pagesEl || !navEl) return;
 
     applyTheme();
     hideTip();
-    pagesEl.innerHTML = '<section class="page active">' + (isMember ? memberPage(Number(parts[1])) : pages[page]()) + '</section>';
+    const warning = storageOk ? "" : '<div class="notice storage-warning" role="alert"><b>Changes aren’t being saved.</b> This browser isn’t letting the tracker save (Private Browsing or website data turned off). Anything you enter will be lost when you close this tab — open the tracker in a normal window, or download a backup from Settings before closing.</div>';
+    pagesEl.innerHTML = '<section class="page active">' + warning + (isMember ? memberPage(memberIndexFromRoute(parts.slice(1).join("/"))) : pages[page]()) + '</section>';
     navEl.innerHTML = Object.keys(labels).map(key =>
       '<button class="nav ' + (key === page ? "active" : "") + '" data-nav="' + key + '">' + labels[key] + '</button>'
     ).join("") + '<button class="nav theme-toggle" id="theme-toggle" title="Change light or dark mode">☾ Theme: ' + themeNames[data.theme] + '</button>';
     bindEvents(pagesEl, navEl);
+    if (focusAfterRender) {
+      const target = document.querySelector(focusAfterRender[0]) ;
+      const usable = target && !target.disabled ? target : document.querySelector(focusAfterRender[1]);
+      if (usable) usable.focus();
+      focusAfterRender = null;
+    }
   }
 
   function addRow(table, row) {
@@ -796,6 +933,8 @@
     if (!window.confirm("Start fresh? This clears your team, coaching, 1:1 notes, training, goals, schedule and results. Your name, store, metrics, goals and theme are kept.")) return;
     const fresh = blankData();
     ["salesGoal", "convGoal", "atvGoal", "cxGoal", "metricTitles", "manager", "store", "lastBackup", "theme", "dashboard"].forEach(key => { fresh[key] = data[key]; });
+    fresh.weekStart = mondayIso(0);
+    fresh.scheduleWeek = mondayIso(0);
     if (fresh.manager === "Alex Manager") fresh.manager = "";
     data = fresh;
     saveData();
@@ -828,45 +967,39 @@
     bindDashboardEditing(pagesEl);
 
     // Daily results
-    bind("add-day", () => addRow("days", { sales: 0, conv: 0, atv: 0, cx: 0 }));
     pagesEl.querySelectorAll("[data-day]").forEach(input => {
       input.addEventListener("change", () => {
-        data.days[Number(input.dataset.day)][input.dataset.field] = Number(input.value) || 0;
+        data.days[Number(input.dataset.day)][input.dataset.field] = Math.max(0, Number(input.value) || 0);
         saveData();
         render();
       });
     });
-    pagesEl.querySelectorAll("[data-delete-day]").forEach(button => {
+    pagesEl.querySelectorAll("[data-clear-day]").forEach(button => {
       button.addEventListener("click", () => {
-        if (!window.confirm("Delete this day’s results?")) return;
-        data.days.splice(Number(button.dataset.deleteDay), 1);
+        const i = Number(button.dataset.clearDay);
+        if (!window.confirm("Clear " + WEEKDAYS[i] + "’s results?")) return;
+        data.days[i] = { sales: 0, conv: 0, atv: 0, cx: 0 };
         saveData();
         render();
       });
-    });
-    bind("new-week", () => {
-      const week = weekTotals();
-      // On Monday or Tuesday you're most likely closing out last week.
-      const label = todayIndex() <= 1 ? weekLabel(-1) : weekLabel(0);
-      const message = week.days ? "Save this week’s results as “" + label + "” and start a new week? You can rename the week afterwards." : "Start a new week? There are no results to save yet.";
-      if (!window.confirm(message)) return;
-      if (week.days) data.history.push({ label: label, sales: week.sales, days: week.days, conv: Math.round(week.conv * 10) / 10, atv: Math.round(week.atv * 10) / 10, cx: Math.round(week.cx * 10) / 10 });
-      data.days = [{ sales: 0, conv: 0, atv: 0, cx: 0 }];
-      saveData();
-      render();
     });
 
     // Adding rows
     bind("add-team", () => {
-      const name = window.prompt("Team member name");
-      if (name && name.trim()) addRow("team", [name.trim(), "On Track", "", 0, ["", "", "", "", "", "", ""]]);
+      const name = (window.prompt("Team member name") || "").trim();
+      if (!name) return;
+      if (nameTaken(name)) {
+        window.alert("There’s already a team member named “" + name + "”. Add a last name or initial so you can tell them apart.");
+        return;
+      }
+      addRow("team", [name, "On Track", "", 0, ["", "", "", "", "", "", ""]]);
     });
     bind("add-coaching", () => addRow("coaching", ["", "", "", isoOffset(7), "Follow Up"]));
     bind("add-training", () => addRow("training", ["", "", 0, "Not Started", ""]));
     bind("add-goal", () => addRow("goals", { name: "Team", goal: "", current: 0, target: 100, due: "" }));
     pagesEl.querySelectorAll("[data-add-for]").forEach(button => {
       button.addEventListener("click", () => {
-        const member = data.team[Number(window.location.hash.split("/")[1])];
+        const member = data.team[memberIndexFromRoute(window.location.hash.split("/").slice(1).join("/"))];
         const name = member ? member[0] : "";
         const kind = button.dataset.addFor;
         if (kind === "coaching") data.coaching.push([name, member ? member[2] : "", "", isoOffset(7), "Follow Up"]);
@@ -906,14 +1039,24 @@
           if (field.dataset.max) value = Math.min(Number(field.dataset.max), value);
         }
         const old = row[col];
+        if (table === "team" && col === "0") {
+          value = value.trim();
+          const problem = !value ? "A name can’t be blank." : nameTaken(value, Number(field.dataset.row)) ? "There’s already a team member named “" + value + "”." : "";
+          if (problem) {
+            field.value = old;
+            toast(problem);
+            return;
+          }
+        }
         row[col] = value;
         // Renaming a team member carries the new name through every tracker.
-        if (table === "team" && col === "0" && old && value.trim()) {
+        if (table === "team" && col === "0" && old && value !== old) {
           data.coaching.forEach(r => { if (r[0] === old) r[0] = value; });
           data.training.forEach(r => { if (r[0] === old) r[0] = value; });
           data.goals.forEach(g => { if (g.name === old) g.name = value; });
           data.notes.forEach(n => { if (n.name === old) n.name = value; });
           if (notesFilter === old) notesFilter = value;
+          if (window.location.hash === "#" + memberRoute(old)) history.replaceState(null, "", "#" + memberRoute(value));
         }
         saveData();
         if (isNumber || field.tagName === "SELECT" || field.type === "date" || (table === "team" && col === "0")) render();
@@ -924,6 +1067,7 @@
       input.addEventListener("change", () => {
         const parts = input.dataset.shift.split(":");
         data.team[Number(parts[0])][4][Number(parts[1])] = input.value.trim();
+        data.scheduleCopied = false;
         saveData();
         render();
       });
@@ -934,7 +1078,16 @@
         const parts = button.dataset.deleteRow.split(":");
         const row = data[parts[0]][Number(parts[1])];
         const name = Array.isArray(row) ? row[0] : row.label || row.goal || row.name;
-        if (!window.confirm("Delete " + (name ? "“" + name + "”" : "this row") + "?")) return;
+        if (parts[0] === "team") {
+          if (!window.confirm("Remove “" + (name || "this team member") + "” from your team?")) return;
+          const counts = [[data.coaching.filter(r => r[0] === name).length, "coaching"], [data.training.filter(r => r[0] === name).length, "training"], [data.goals.filter(g => g.name === name).length, "goal"], [data.notes.filter(n => n.name === name).length, "1:1 note"]].filter(c => c[0]);
+          if (name && counts.length && window.confirm("Also delete " + name + "’s " + counts.map(c => c[0] + " " + c[1] + (c[0] > 1 && c[1] !== "coaching" && c[1] !== "training" ? "s" : "")).join(", ") + "?\n\nOK deletes them too. Cancel keeps them on those tabs.")) {
+            data.coaching = data.coaching.filter(r => r[0] !== name);
+            data.training = data.training.filter(r => r[0] !== name);
+            data.goals = data.goals.filter(g => g.name !== name);
+            data.notes = data.notes.filter(n => n.name !== name);
+          }
+        } else if (!window.confirm("Delete " + (name ? "“" + name + "”" : "this row") + "?")) return;
         data[parts[0]].splice(Number(parts[1]), 1);
         saveData();
         if (parts[0] === "team" && window.location.hash.indexOf("#member/") === 0) go("team");
@@ -997,29 +1150,43 @@
     });
 
     bind("print-page", () => window.print());
+    bind("schedule-ok", () => {
+      data.scheduleCopied = false;
+      saveData();
+      render();
+    });
     bind("clear-schedule", () => {
       if (!window.confirm("Clear every shift on the schedule?")) return;
       data.team.forEach(m => { m[4] = ["", "", "", "", "", "", ""]; });
+      data.scheduleCopied = false;
       saveData();
       render();
     });
 
-    bind("save-huddle", () => {
-      data.huddle = [0, 1, 2, 3].map(i => document.getElementById("huddle-" + i).value);
+    const readSettings = () => {
+      const value = id => document.getElementById(id);
+      if (value("manager-name")) {
+        data.manager = value("manager-name").value.trim();
+        data.store = value("store-name").value.trim();
+        data.salesGoal = Math.max(0, Number(value("sales-goal").value) || 0);
+        data.convGoal = Math.max(0, Number(value("conv-goal").value) || 0);
+        data.atvGoal = Math.max(0, Number(value("atv-goal").value) || 0);
+        data.cxGoal = Math.max(0, Number(value("cx-goal").value) || 0);
+        data.metricTitles = [0, 1, 2, 3].map(i => value("metric-title-" + i).value.trim() || metricDefaults[i]);
+      }
+      if (value("huddle-0")) data.huddle = [0, 1, 2, 3].map(i => value("huddle-" + i).value);
       saveData();
-      window.alert("Huddle saved.");
+    };
+    // Settings save as soon as a field changes, so nothing is lost by switching tabs.
+    pagesEl.querySelectorAll("[data-setting]").forEach(input => input.addEventListener("change", readSettings));
+    bind("save-huddle", () => {
+      readSettings();
+      toast("Huddle saved.");
       render();
     });
     bind("save-settings", () => {
-      data.manager = document.getElementById("manager-name").value.trim();
-      data.store = document.getElementById("store-name").value.trim();
-      data.salesGoal = Number(document.getElementById("sales-goal").value) || 0;
-      data.convGoal = Number(document.getElementById("conv-goal").value) || 0;
-      data.atvGoal = Number(document.getElementById("atv-goal").value) || 0;
-      data.cxGoal = Number(document.getElementById("cx-goal").value) || 0;
-      data.metricTitles = [0, 1, 2, 3].map(i => document.getElementById("metric-title-" + i).value.trim() || metricDefaults[i]);
-      saveData();
-      window.alert("Settings saved.");
+      readSettings();
+      toast("Settings saved.");
       render();
     });
   }
@@ -1080,7 +1247,9 @@
         const parts = button.dataset.moveWidget.split(":");
         const visible = data.dashboard.filter(w => !w.hidden);
         const neighbor = visible[visible.findIndex(w => w.id === parts[0]) + Number(parts[1])];
-        if (neighbor) moveWidget(parts[0], data.dashboard.indexOf(neighbor));
+        if (!neighbor) return;
+        focusAfterRender = ['[data-move-widget="' + button.dataset.moveWidget + '"]', '[data-move-widget="' + parts[0] + ':' + (-Number(parts[1])) + '"]'];
+        moveWidget(parts[0], data.dashboard.indexOf(neighbor));
       });
     });
 
