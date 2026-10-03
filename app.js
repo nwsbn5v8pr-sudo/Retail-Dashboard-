@@ -80,7 +80,8 @@
     working: "Working today",
     team: "Team at a glance",
     upcoming: "Coming up",
-    actions: "Today’s key actions"
+    actions: "Today’s key actions",
+    performers: "Top performers"
   };
 
   const WIDGET_SIZES = { full: "Full width", large: "Two-thirds", half: "Half", small: "One-third" };
@@ -94,7 +95,8 @@
       { id: "working", size: "small" },
       { id: "team", size: "small" },
       { id: "upcoming", size: "small" },
-      { id: "actions", size: "small" }
+      { id: "actions", size: "small" },
+      { id: "performers", size: "small" }
     ];
   }
 
@@ -129,18 +131,24 @@
       days: [[7200, 18, 89, 92], [6800, 17, 84, 90], [7600, 18, 90, 94], [7900, 19, 86, 91], [8400, 20, 88, 93], [9800, 21, 91, 95], [8800, 19, 87, 92]]
         .map((v, i) => i <= todayIndex() ? { sales: v[0], conv: v[1], atv: v[2], cx: v[3] } : { sales: 0, conv: 0, atv: 0, cx: 0 }),
       history: [
-        { label: weekLabel(-4), sales: 46200, days: 7, conv: 17.1, atv: 83, cx: 89 },
-        { label: weekLabel(-3), sales: 48900, days: 7, conv: 18.0, atv: 86, cx: 91 },
-        { label: weekLabel(-2), sales: 51200, days: 7, conv: 19.2, atv: 88, cx: 93 },
-        { label: weekLabel(-1), sales: 47800, days: 7, conv: 18.4, atv: 85, cx: 90 }
+        { start: mondayIso(-4), label: weekLabel(-4), sales: 46200, days: 7, conv: 17.1, atv: 83, cx: 89 },
+        { start: mondayIso(-3), label: weekLabel(-3), sales: 48900, days: 7, conv: 18.0, atv: 86, cx: 91 },
+        { start: mondayIso(-2), label: weekLabel(-2), sales: 51200, days: 7, conv: 19.2, atv: 88, cx: 93 },
+        { start: mondayIso(-1), label: weekLabel(-1), sales: 47800, days: 7, conv: 18.4, atv: 85, cx: 90 }
       ],
       team: [
-        ["Alex Johnson", "On Track", "Customer Engagement", 85, ["9-5", "9-5", "Off", "Off", "12-8", "10-6", "10-6"]],
-        ["Mike Carter", "Needs Coaching", "Sales Process", 62, ["Off", "12-8", "12-8", "9-5", "9-5", "Off", "11-7"]],
-        ["Sarah Lee", "On Track", "Product Knowledge", 95, ["10-6", "10-6", "10-6", "Off", "Off", "9-5", "12-6"]],
-        ["Tom Davis", "On Track", "Customer Experience", 78, ["12-8", "Off", "9-5", "9-5", "10-6", "12-8", "Off"]],
-        ["Lisa Brown", "Needs Training", "Conversion", 68, ["Off", "9-3", "Off", "12-8", "12-8", "9-5", "10-4"]]
+        ["Alex Johnson", "On Track", "Customer Engagement", 85, ["9-5", "9-5", "Off", "Off", "12-8", "10-6", "10-6"], 12000],
+        ["Mike Carter", "Needs Coaching", "Sales Process", 62, ["Off", "12-8", "12-8", "9-5", "9-5", "Off", "11-7"], 9000],
+        ["Sarah Lee", "On Track", "Product Knowledge", 95, ["10-6", "10-6", "10-6", "Off", "Off", "9-5", "12-6"], 11000],
+        ["Tom Davis", "On Track", "Customer Experience", 78, ["12-8", "Off", "9-5", "9-5", "10-6", "12-8", "Off"], 10000],
+        ["Lisa Brown", "Needs Training", "Conversion", 68, ["Off", "9-3", "Off", "12-8", "12-8", "9-5", "10-4"], 8000]
       ],
+      teamWeek: sampleTeamWeek((todayIndex() + 1) / 7),
+      teamHistory: [
+        { start: mondayIso(-2), label: weekLabel(-2), entries: sampleTeamWeek(1.04, true) },
+        { start: mondayIso(-1), label: weekLabel(-1), entries: sampleTeamWeek(0.97, true) }
+      ],
+      reportNotes: {},
       coaching: [
         ["Alex Johnson", "Customer Engagement", "Practice discovery questions", isoOffset(4), "On Track"],
         ["Mike Carter", "Sales Process", "Review the selling steps together", isoOffset(2), "Follow Up"],
@@ -176,11 +184,28 @@
     };
   }
 
+  const SAMPLE_TARGETS = { "Alex Johnson": 12000, "Mike Carter": 9000, "Sarah Lee": 11000, "Tom Davis": 10000, "Lisa Brown": 8000 };
+
+  function sampleTeamWeek(share, withTargets) {
+    const base = { "Alex Johnson": [12600, 2.3], "Mike Carter": [7400, 1.6], "Sarah Lee": [12100, 2.1], "Tom Davis": [9800, 1.9], "Lisa Brown": [7300, 1.7] };
+    const week = {};
+    Object.keys(base).forEach(name => {
+      const sales = Math.round(base[name][0] * share / 10) * 10;
+      const trans = Math.round(sales / 86);
+      week[name] = { sales: sales, trans: trans, items: Math.round(trans * base[name][1]) };
+      if (withTargets) week[name].target = SAMPLE_TARGETS[name];
+    });
+    return week;
+  }
+
   function blankData() {
     const blank = makeSample();
     blank.manager = "";
     blank.welcomeDismissed = true;
     blank.days = emptyWeek();
+    blank.teamWeek = {};
+    blank.teamHistory = [];
+    blank.reportNotes = {};
     ["history", "team", "coaching", "training", "goals", "notes", "actions"].forEach(key => { blank[key] = []; });
     blank.huddle = ["Set today’s focus in Settings", "", "", ""];
     return blank;
@@ -203,13 +228,15 @@
     if (typeof saved.store !== "string") saved.store = "";
     if (["auto", "light", "dark"].indexOf(saved.theme) < 0) saved.theme = "auto";
     if (saved.welcomeDismissed === undefined) saved.welcomeDismissed = true;
-    ["history", "goals", "notes"].forEach(key => { if (!Array.isArray(saved[key])) saved[key] = []; });
+    ["history", "goals", "notes", "teamHistory"].forEach(key => { if (!Array.isArray(saved[key])) saved[key] = []; });
+    ["teamWeek", "reportNotes"].forEach(key => { if (!saved[key] || typeof saved[key] !== "object" || Array.isArray(saved[key])) saved[key] = {}; });
     saved.dashboard = normalizeLayout(saved.dashboard);
     while (saved.huddle.length < 4) saved.huddle.push("");
     saved.team.forEach(row => {
       if (renames[row[1]]) row[1] = renames[row[1]];
       if (!Array.isArray(row[4])) row[4] = [];
       while (row[4].length < 7) row[4].push("");
+      row[5] = Math.max(0, Number(row[5]) || 0);
     });
     // Results used to be a free list of rows; now there is one row per day, Monday to Sunday.
     if (!saved.weekStart) {
@@ -299,9 +326,21 @@
     if (data.weekStart !== current) {
       const week = weekTotals();
       if (data.weekStart < current && week.days) {
-        data.history.push({ label: weekLabelFrom(data.weekStart), sales: week.sales, days: week.days, conv: Math.round(week.conv * 10) / 10, atv: Math.round(week.atv * 10) / 10, cx: Math.round(week.cx * 10) / 10 });
+        data.history.push({ start: data.weekStart, label: weekLabelFrom(data.weekStart), sales: week.sales, days: week.days, conv: Math.round(week.conv * 10) / 10, atv: Math.round(week.atv * 10) / 10, cx: Math.round(week.cx * 10) / 10 });
       }
-      if (data.weekStart < current) data.days = emptyWeek();
+      if (data.weekStart < current && Object.keys(data.teamWeek).some(n => hasNumbers(data.teamWeek[n]))) {
+        const entries = {};
+        Object.keys(data.teamWeek).forEach(name => {
+          if (!hasNumbers(data.teamWeek[name])) return;
+          const member = data.team.find(m => m[0] === name);
+          entries[name] = Object.assign({}, data.teamWeek[name], { target: member ? member[5] : 0 });
+        });
+        data.teamHistory.push({ start: data.weekStart, label: weekLabelFrom(data.weekStart), entries: entries });
+      }
+      if (data.weekStart < current) {
+        data.days = emptyWeek();
+        data.teamWeek = {};
+      }
       data.weekStart = current;
       changed = true;
     }
@@ -313,20 +352,82 @@
     if (changed) saveData();
   }
 
-  function downloadBackup() {
-    data.lastBackup = new Date().toISOString();
-    saveData();
-    const payload = { app: "manager-performance-tracker", version: 2, exportedAt: data.lastBackup, data: data };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  function downloadFile(filename, text, type) {
+    const blob = new Blob([text], { type: type });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = "manager-tracker-backup-" + data.lastBackup.slice(0, 10) + ".json";
+    link.download = filename;
     document.body.appendChild(link);
     link.click();
     setTimeout(() => {
       URL.revokeObjectURL(link.href);
       link.remove();
     }, 1000);
+  }
+
+  function downloadBackup() {
+    data.lastBackup = new Date().toISOString();
+    saveData();
+    const payload = { app: "manager-performance-tracker", version: 2, exportedAt: data.lastBackup, data: data };
+    downloadFile("manager-tracker-backup-" + data.lastBackup.slice(0, 10) + ".json", JSON.stringify(payload, null, 2), "application/json");
+  }
+
+  function hasNumbers(entry) {
+    return !!entry && (Number(entry.sales) || Number(entry.trans) || Number(entry.items));
+  }
+
+  // One person's numbers for a week, plus what they work out to.
+  function personStats(entry, target) {
+    const sales = Number(entry && entry.sales) || 0;
+    const trans = Number(entry && entry.trans) || 0;
+    const items = Number(entry && entry.items) || 0;
+    target = Number(target) || 0;
+    return { sales: sales, trans: trans, items: items, target: target, pct: target ? sales / target * 100 : 0, avgSale: trans ? sales / trans : 0, perSale: trans ? items / trans : 0 };
+  }
+
+  function currentStats(member) {
+    return personStats(data.teamWeek[member[0]], member[5]);
+  }
+
+  function lastWeekEntry(name) {
+    const last = data.teamHistory[data.teamHistory.length - 1];
+    return last && last.entries[name] ? last.entries[name] : null;
+  }
+
+  // Share of the week gone so far: someone is "on pace" when sales keep up with it.
+  function weekShare() {
+    return (todayIndex() + 1) / 7;
+  }
+
+  function paceTone(stats) {
+    if (!stats.target) return "";
+    const expected = stats.target * weekShare();
+    return stats.sales >= expected ? "" : stats.sales >= expected * 0.85 ? "warn" : "bad";
+  }
+
+  function teamTotals(rows) {
+    const t = rows.reduce((acc, r) => {
+      acc.sales += r.sales;
+      acc.trans += r.trans;
+      acc.items += r.items;
+      acc.target += r.target;
+      return acc;
+    }, { sales: 0, trans: 0, items: 0, target: 0 });
+    t.avgSale = t.trans ? t.sales / t.trans : 0;
+    t.perSale = t.trans ? t.items / t.trans : 0;
+    t.pct = t.target ? t.sales / t.target * 100 : 0;
+    return t;
+  }
+
+  // Spreadsheet cells: quoted when needed, and text that a spreadsheet would treat as a formula is defused.
+  function csvCell(value) {
+    let text = value == null ? "" : String(value);
+    if (typeof value === "string" && /^[=+\-@\t\r]/.test(text)) text = "'" + text;
+    return /[",\n\r]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+  }
+
+  function csvTable(rows) {
+    return rows.map(r => r.map(csvCell).join(",")).join("\r\n");
   }
 
   function restoreBackup(file) {
@@ -349,6 +450,55 @@
       }
     };
     reader.readAsText(file);
+  }
+
+  /* ---------- Spreadsheet export ---------- */
+
+  const EXPORTS = {
+    daily: "This week’s daily results",
+    weeks: "Weekly history",
+    scorecard: "Team scorecard (all weeks)",
+    team: "Team members",
+    coaching: "Coaching",
+    training: "Training",
+    goals: "Goals",
+    notes: "1:1 notes",
+    schedule: "Schedule"
+  };
+
+  function exportRows(kind) {
+    const t = data.metricTitles;
+    const round = n => Math.round(n * 100) / 100;
+    if (kind === "daily") return [["Date", "Day", t[0], t[1] + " (%)", t[2], t[3] + " (%)"]].concat(data.days.map((d, i) => [addDays(data.weekStart, i), WEEKDAYS[i], d.sales, d.conv, d.atv, d.cx]));
+    if (kind === "weeks") {
+      const w = weekTotals();
+      return [["Week", t[0], "Days entered", t[1] + " (%)", t[2], t[3] + " (%)"]].concat(data.history.map(h => [h.label, h.sales, h.days, h.conv, h.atv, h.cx]), [[weekLabelFrom(data.weekStart) + " (this week so far)", w.sales, w.days, round(w.conv), round(w.atv), round(w.cx)]]);
+    }
+    if (kind === "scorecard") {
+      const rows = [["Week", "Team member", "Sales target", "Sales", "% of target", "Transactions", "Items", "Avg sale", "Items per sale"]];
+      const add = (label, name, entry, target) => {
+        const st = personStats(entry, target);
+        rows.push([label, name, st.target, st.sales, round(st.pct), st.trans, st.items, round(st.avgSale), round(st.perSale)]);
+      };
+      data.teamHistory.forEach(h => Object.keys(h.entries).forEach(name => add(h.label, name, h.entries[name], h.entries[name].target)));
+      data.team.forEach(m => add(weekLabelFrom(data.weekStart) + " (this week so far)", m[0], data.teamWeek[m[0]], m[5]));
+      return rows;
+    }
+    if (kind === "team") return [["Name", "Status", "Focus area", "Weekly sales target", "Hours this week"]].concat(data.team.map(m => [m[0], m[1], m[2], m[5], memberHours(m)]));
+    if (kind === "coaching") return [["Team member", "Focus", "Next step", "Follow up on", "Status"]].concat(data.coaching.map(r => [r[0], r[1], r[2], r[3], coachingOverdue(r) && r[4] !== "Overdue" ? r[4] + " (overdue)" : r[4]]));
+    if (kind === "training") return [["Team member", "Training", "Status", "Due"]].concat(data.training.map(r => [r[0], r[1], trainingOverdue(r) ? r[3] + " (overdue)" : r[3], r[4]]));
+    if (kind === "goals") return [["Owner", "Goal", "Current", "Target", "% complete", "Due"]].concat(data.goals.map(g => [g.name, g.goal, g.current, g.target, Number(g.target) ? round(g.current / g.target * 100) : 0, g.due]));
+    if (kind === "notes") return [["Date", "Team member", "What we talked about", "Commitments & next steps", "Follow up on"]].concat(data.notes.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map(n => [n.date, n.name, n.notes, n.commitments, n.followUp]));
+    if (kind === "schedule") return [["Team member"].concat(WEEKDAYS.map((d, i) => d + " " + addDays(data.weekStart, i)), ["Hours"])].concat(data.team.map(m => [m[0]].concat(m[4], [memberHours(m)])));
+    return [];
+  }
+
+  function exportCsv(kind) {
+    const header = [["Manager Performance Tracker" + (data.store ? " — " + data.store : "")], ["Exported " + new Date().toLocaleString()]];
+    const kinds = kind === "all" ? Object.keys(EXPORTS) : [kind];
+    const body = kinds.map(k => (kinds.length > 1 ? csvTable([[EXPORTS[k].toUpperCase()]]) + "\r\n" : "") + csvTable(exportRows(k))).join("\r\n\r\n");
+    // The byte-order mark makes Excel read accents and symbols correctly.
+    downloadFile("manager-tracker-" + (kind === "all" ? "everything" : kind) + "-" + todayIso() + ".csv", "\ufeff" + csvTable(header) + "\r\n\r\n" + body, "text/csv;charset=utf-8");
   }
 
   /* ---------- Calculations ---------- */
@@ -626,6 +776,12 @@
       upcoming: () => '<div class="card pad"><div class="head"><div><h2>Coming up</h2><p>Due in the next 7 days, plus anything overdue.</p></div></div>' +
         (soon.length ? soon.map(x => '<button type="button" class="list-row row-link" data-target="' + x.target + '"><div><b>' + esc(x.what) + '</b><small>' + esc(x.who || "") + '</small></div><span class="status ' + x.tag[1] + '">' + esc(x.tag[0]) + '</span></button>').join("") : '<div class="empty">Nothing due this week.</div>') +
         '</div>',
+      performers: () => {
+        const ranked = data.team.map(m => ({ m: m, st: currentStats(m) })).filter(r => r.st.sales).sort((a, b) => (b.st.target && a.st.target ? b.st.pct - a.st.pct : b.st.sales - a.st.sales)).slice(0, 3);
+        return '<div class="card pad"><div class="head"><div><h2>Top performers</h2><p>This week, by % of their target</p></div><button type="button" class="btn alt small" data-target="scorecard">Scorecard</button></div>' +
+          (ranked.length ? ranked.map((r, n) => '<div class="list-row"><span class="rank">' + (n + 1) + '</span><div style="flex:1">' + personLink(r.m[0]) + progressBar(r.st.target ? r.st.pct : 100, paceTone(r.st)) + '</div><b>' + (r.st.target ? Math.round(r.st.pct) + "%" : money(r.st.sales)) + '</b></div>').join("") : '<div class="empty">Enter each person’s sales on the Scorecard tab.</div>') +
+          '</div>';
+      },
       actions: () => '<div class="card pad"><div class="head"><div><h2>Today’s key actions</h2><p>Keep it short. Keep it moving.</p></div><button type="button" class="btn small" id="add-action">+ Add</button></div>' +
         (data.actions.length ? "" : '<div class="empty">No actions yet.</div>') +
         data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + esc(action) + '" placeholder="New action" aria-label="Action ' + (i + 1) + '"><button type="button" class="action-delete" aria-label="Delete action" data-delete-action="' + i + '">×</button></div>').join("") +
@@ -687,6 +843,180 @@
       '</div>';
   }
 
+  function scorecardPage() {
+    const rows = data.team.map((m, i) => ({ m: m, i: i, st: currentStats(m) }));
+    const totals = teamTotals(rows.map(r => r.st));
+    const withTarget = rows.filter(r => r.st.target);
+    const onPace = withTarget.filter(r => paceTone(r.st) === "").length;
+    const ranked = rows.filter(r => r.st.sales).sort((a, b) => (b.st.target && a.st.target ? b.st.pct - a.st.pct : b.st.sales - a.st.sales));
+    const input = (r, field, value, label) => '<input class="cell-input" type="number" inputmode="decimal" min="0" data-person="' + r.i + '" data-field="' + field + '" value="' + (Number(value) || "") + '" placeholder="0" aria-label="' + esc(r.m[0]) + ' ' + label + '">';
+    return top("Team Scorecard", "Each person’s numbers for the week. Update them whenever you check your sales report.") +
+      '<div class="grid4">' +
+      tile("Team sales", money(totals.sales), totals.target ? Math.round(totals.pct) + "% of " + money(totals.target) + " in targets" : "Set targets below") +
+      tile("On pace", withTarget.length ? onPace + "/" + withTarget.length : "—", "Keeping up with their target so far this week") +
+      tile("Avg sale", totals.trans ? "$" + totals.avgSale.toFixed(0) : "—", "Team sales ÷ transactions") +
+      tile("Items per sale", totals.trans ? totals.perSale.toFixed(1) : "—", "Team items ÷ transactions") +
+      '</div>' +
+      '<div class="card pad mt"><div class="head"><div><h2>' + weekLabelFrom(data.weekStart) + '</h2><p>Type each person’s week-to-date totals. Numbers move to the history every Monday; targets carry over.</p></div><button type="button" class="btn alt" data-target="report">Weekly Report</button></div>' +
+      (data.team.length ? '<div class="table"><table class="fit score-table"><thead><tr><th>Team member</th><th>Weekly target ($)</th><th>Sales ($)</th><th>Trans&shy;actions</th><th>Items sold</th><th>Results</th></tr></thead><tbody>' +
+        rows.map(r => {
+          const prev = lastWeekEntry(r.m[0]);
+          const tone = paceTone(r.st);
+          return '<tr><td>' + personLink(r.m[0]) + '</td>' +
+            '<td>' + input(r, "target", r.m[5], "weekly target") + '</td><td>' + input(r, "sales", r.st.sales, "sales") + '</td><td>' + input(r, "trans", r.st.trans, "transactions") + '</td><td>' + input(r, "items", r.st.items, "items sold") + '</td>' +
+            '<td class="result-cell">' + (r.st.target ? '<b>' + Math.round(r.st.pct) + '%</b> of target' + progressBar(r.st.pct, tone) : '<span class="muted">No target</span>') +
+            '<small>' + (r.st.trans ? "$" + r.st.avgSale.toFixed(0) + " avg · " + r.st.perSale.toFixed(1) + " items/sale" : "Add transactions") + (prev && prev.sales ? " · last wk " + money(prev.sales) : "") + '</small></td></tr>';
+        }).join("") +
+        '</tbody><tfoot><tr><td>Team</td><td>' + money(totals.target) + '</td><td>' + money(totals.sales) + '</td><td>' + totals.trans + '</td><td>' + totals.items + '</td><td>' + (totals.target ? Math.round(totals.pct) + "% of target" : "") + '</td></tr></tfoot></table></div>' : '<div class="notice">Add team members on the Team tab first.</div>') +
+      '</div>' +
+      '<div class="card pad mt"><div class="head"><div><h2>Leaderboard</h2><p>' + (withTarget.length ? "Ranked by % of their own target, so part-timers compete fairly." : "Ranked by sales. Add targets to rank by % of target.") + '</p></div></div>' +
+      (ranked.length ? ranked.map((r, n) => '<div class="list-row"><span class="rank">' + (n + 1) + '</span><div style="flex:1">' + personLink(r.m[0]) + progressBar(r.st.target ? r.st.pct : r.st.sales / ranked[0].st.sales * 100, paceTone(r.st)) + '</div><b>' + (r.st.target ? Math.round(r.st.pct) + "%" : money(r.st.sales)) + '</b></div>').join("") : '<div class="empty">No sales entered yet this week.</div>') +
+      '</div>';
+  }
+
+  /* ---------- Weekly report ---------- */
+
+  let reportWeek = "current";
+
+  function reportData() {
+    const t = data.metricTitles;
+    const isCurrent = reportWeek === "current" || !data.history[Number(reportWeek)];
+    const index = isCurrent ? data.history.length : Number(reportWeek);
+    const week = isCurrent ? weekTotals() : data.history[index];
+    const prev = data.history[index - 1] || null;
+    const label = isCurrent ? weekLabelFrom(data.weekStart) : week.label;
+    const teamWeek = isCurrent ? null : data.teamHistory.find(h => (week.start && h.start ? h.start === week.start : h.label === week.label));
+    const people = isCurrent ? data.team.filter(m => hasNumbers(data.teamWeek[m[0]]) || m[5]).map(m => ({ name: m[0], st: currentStats(m) }))
+      : teamWeek ? Object.keys(teamWeek.entries).map(name => ({ name: name, st: personStats(teamWeek.entries[name], teamWeek.entries[name].target) })) : [];
+    people.sort((a, b) => (b.st.target && a.st.target ? b.st.pct - a.st.pct : b.st.sales - a.st.sales));
+    const days = Number(week.days) || 0;
+    const metrics = [
+      [t[0], money(week.sales), money(data.salesGoal), data.salesGoal ? Math.round(week.sales / data.salesGoal * 100) + "%" : "—", prev && days ? pctChange(week.sales / days, prev.sales / (prev.days || 7)) + " daily avg" : "—"],
+      [t[1], Number(week.conv).toFixed(1) + "%", data.convGoal + "%", data.convGoal ? Math.round(week.conv / data.convGoal * 100) + "%" : "—", prev && days ? ptsChange(week.conv, prev.conv) : "—"],
+      [t[2], "$" + Number(week.atv).toFixed(0), "$" + data.atvGoal, data.atvGoal ? Math.round(week.atv / data.atvGoal * 100) + "%" : "—", prev && days ? dollarChange(week.atv, prev.atv) : "—"],
+      [t[3], Number(week.cx).toFixed(1) + "%", data.cxGoal + "%", data.cxGoal ? Math.round(week.cx / data.cxGoal * 100) + "%" : "—", prev && days ? ptsChange(week.cx, prev.cx) : "—"]
+    ];
+    const start = isCurrent ? data.weekStart : null;
+    const inWeek = d => start && d >= start && d <= addDays(start, 6);
+    const people2 = {
+      notes: data.notes.filter(n => inWeek(n.date)).length,
+      coachingOverdue: data.coaching.filter(coachingOverdue).length,
+      coachingOpen: data.coaching.filter(r => r[4] !== "Completed").length,
+      trainingDone: data.training.filter(r => r[3] === "Completed").length,
+      trainingOpen: data.training.filter(r => r[3] !== "Completed").length,
+      trainingOverdue: data.training.filter(trainingOverdue).length,
+      goalsReached: data.goals.filter(g => Number(g.target) && Number(g.current) >= Number(g.target)).length,
+      goalsActive: data.goals.filter(g => !(Number(g.target) && Number(g.current) >= Number(g.target))).length
+    };
+    return { isCurrent: isCurrent, label: label, week: week, days: days, metrics: metrics, people: people, totals: teamTotals(people.map(p => p.st)), counts: people2, key: isCurrent ? data.weekStart : "history:" + (week.start || week.label) };
+  }
+
+  function pctChange(now, before) {
+    if (!before) return "—";
+    const d = (now - before) / before * 100;
+    return (d >= 0 ? "▲ " : "▼ ") + Math.abs(d).toFixed(0) + "%";
+  }
+
+  function ptsChange(now, before) {
+    const d = Number(now) - Number(before);
+    return (d >= 0 ? "▲ " : "▼ ") + Math.abs(d).toFixed(1) + " pts";
+  }
+
+  function dollarChange(now, before) {
+    const d = Number(now) - Number(before);
+    return (d >= 0 ? "▲ $" : "▼ $") + Math.abs(d).toFixed(0);
+  }
+
+  function reportPage() {
+    const r = reportData();
+    const t = data.metricTitles;
+    const comments = data.reportNotes[r.key] || "";
+    const top3 = r.people.filter(p => p.st.sales).slice(0, 3);
+    return top("Weekly Report", "A one-page summary to print, save as a PDF, or paste into an email.") +
+      '<div class="card pad no-print"><div class="report-controls"><div><label for="report-week">Week</label><select id="report-week"><option value="current"' + (r.isCurrent ? " selected" : "") + '>This week (' + weekLabelFrom(data.weekStart) + ')</option>' +
+      data.history.map((h, i) => ({ h: h, i: i })).reverse().map(x => '<option value="' + x.i + '"' + (!r.isCurrent && String(x.i) === String(reportWeek) ? " selected" : "") + '>' + esc(x.h.label) + '</option>').join("") + '</select></div>' +
+      '<div class="btn-row"><button type="button" class="btn" id="print-page">Print or Save PDF</button><button type="button" class="btn alt" id="copy-report">Copy as Text</button><button type="button" class="btn alt" id="report-csv">Download Spreadsheet</button></div></div></div>' +
+      '<article class="card pad mt report">' +
+      '<header class="report-head"><div><div class="label">WEEKLY REPORT</div><h2>' + esc(r.label) + '</h2><p>' + esc([data.store, data.manager].filter(Boolean).join(" · ") || "Manager Performance Tracker") + '</p></div><p class="report-date">Prepared ' + new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) + (r.isCurrent ? '<br>' + r.days + ' of 7 days entered' : "") + '</p></header>' +
+      '<h3>Store results</h3><table class="report-table"><thead><tr><th>Metric</th><th>Actual</th><th>Goal</th><th>% of goal</th><th>vs last week</th></tr></thead><tbody>' +
+      r.metrics.map(m => '<tr><td><b>' + esc(m[0]) + '</b></td><td>' + m[1] + '</td><td>' + m[2] + '</td><td>' + m[3] + '</td><td>' + m[4] + '</td></tr>').join("") + '</tbody></table>' +
+      (r.isCurrent ? '<h3>By day</h3><table class="report-table"><thead><tr><th>Day</th><th>' + esc(t[0]) + '</th><th>' + esc(t[1]) + '</th><th>' + esc(t[2]) + '</th><th>' + esc(t[3]) + '</th></tr></thead><tbody>' +
+        data.days.map((d, i) => '<tr><td>' + WEEKDAYS[i] + ' ' + shortDate(addDays(data.weekStart, i)) + '</td>' + (hasDay(d) ? '<td>' + money(d.sales) + '</td><td>' + Number(d.conv).toFixed(1) + '%</td><td>$' + Number(d.atv).toFixed(0) + '</td><td>' + Number(d.cx).toFixed(1) + '%</td>' : '<td colspan="4" class="muted">—</td>') + '</tr>').join("") + '</tbody></table>' : "") +
+      '<h3>Team scorecard</h3>' + (r.people.length ? '<table class="report-table"><thead><tr><th>Team member</th><th>Sales</th><th>Target</th><th>% of target</th><th>Avg sale</th><th>Items/sale</th></tr></thead><tbody>' +
+        r.people.map(p => '<tr><td>' + esc(p.name) + '</td><td>' + money(p.st.sales) + '</td><td>' + (p.st.target ? money(p.st.target) : "—") + '</td><td>' + (p.st.target ? Math.round(p.st.pct) + "%" : "—") + '</td><td>' + (p.st.trans ? "$" + p.st.avgSale.toFixed(0) : "—") + '</td><td>' + (p.st.trans ? p.st.perSale.toFixed(1) : "—") + '</td></tr>').join("") +
+        '</tbody><tfoot><tr><td>Team</td><td>' + money(r.totals.sales) + '</td><td>' + (r.totals.target ? money(r.totals.target) : "—") + '</td><td>' + (r.totals.target ? Math.round(r.totals.pct) + "%" : "—") + '</td><td>' + (r.totals.trans ? "$" + r.totals.avgSale.toFixed(0) : "—") + '</td><td>' + (r.totals.trans ? r.totals.perSale.toFixed(1) : "—") + '</td></tr></tfoot></table>' : '<p class="muted">No team numbers recorded for this week.</p>') +
+      (r.isCurrent ? '<h3>People</h3><ul class="report-list">' +
+        '<li><b>Top performers:</b> ' + (top3.length ? top3.map(p => esc(p.name) + (p.st.target ? " (" + Math.round(p.st.pct) + "%)" : " (" + money(p.st.sales) + ")")).join(", ") : "—") + '</li>' +
+        '<li><b>Coaching:</b> ' + r.counts.coachingOpen + ' open, ' + r.counts.coachingOverdue + ' overdue</li>' +
+        '<li><b>1:1s this week:</b> ' + r.counts.notes + '</li>' +
+        '<li><b>Training:</b> ' + r.counts.trainingDone + ' completed, ' + r.counts.trainingOpen + ' open' + (r.counts.trainingOverdue ? ', ' + r.counts.trainingOverdue + ' overdue' : "") + '</li>' +
+        '<li><b>Goals:</b> ' + r.counts.goalsReached + ' reached, ' + r.counts.goalsActive + ' in progress</li></ul>' : "") +
+      '<h3>Manager comments</h3><textarea id="report-comments" class="report-comments" placeholder="Wins, challenges, and your plan for next week…">' + esc(comments) + '</textarea><div class="print-only report-comments-print">' + (esc(comments).replace(/\n/g, "<br>") || "—") + '</div>' +
+      '</article>';
+  }
+
+  function hasDay(d) {
+    return Number(d.sales) || Number(d.conv) || Number(d.atv) || Number(d.cx);
+  }
+
+  function reportText() {
+    const r = reportData();
+    const comments = data.reportNotes[r.key] || "";
+    const lines = ["WEEKLY REPORT — " + r.label, [data.store, data.manager].filter(Boolean).join(" · "), ""];
+    lines.push("STORE RESULTS");
+    r.metrics.forEach(m => lines.push("• " + m[0] + ": " + m[1] + " (goal " + m[2] + ", " + m[3] + " of goal" + (m[4] !== "—" ? ", " + m[4] + " vs last week" : "") + ")"));
+    if (r.people.length) {
+      lines.push("", "TEAM");
+      r.people.forEach(p => lines.push("• " + p.name + ": " + money(p.st.sales) + (p.st.target ? " (" + Math.round(p.st.pct) + "% of " + money(p.st.target) + ")" : "") + (p.st.trans ? ", $" + p.st.avgSale.toFixed(0) + " avg sale, " + p.st.perSale.toFixed(1) + " items/sale" : "")));
+      lines.push("• Team: " + money(r.totals.sales) + (r.totals.target ? " (" + Math.round(r.totals.pct) + "% of target)" : ""));
+    }
+    if (r.isCurrent) {
+      lines.push("", "PEOPLE", "• Coaching: " + r.counts.coachingOpen + " open, " + r.counts.coachingOverdue + " overdue", "• 1:1s this week: " + r.counts.notes, "• Training: " + r.counts.trainingDone + " completed, " + r.counts.trainingOpen + " open", "• Goals: " + r.counts.goalsReached + " reached, " + r.counts.goalsActive + " in progress");
+    }
+    if (comments.trim()) lines.push("", "MANAGER COMMENTS", comments.trim());
+    return lines.filter((l, i) => !(l === "" && lines[i - 1] === "")).join("\n");
+  }
+
+  function reportCsv() {
+    const r = reportData();
+    const rows = [["Weekly report", r.label], [data.store || "", data.manager || ""], [], ["Metric", "Actual", "Goal", "% of goal", "vs last week"]].concat(r.metrics, [[]]);
+    if (r.people.length) {
+      rows.push(["Team member", "Sales", "Target", "% of target", "Transactions", "Items", "Avg sale", "Items per sale"]);
+      r.people.forEach(p => rows.push([p.name, p.st.sales, p.st.target, Math.round(p.st.pct), p.st.trans, p.st.items, Math.round(p.st.avgSale * 100) / 100, Math.round(p.st.perSale * 100) / 100]));
+      rows.push([]);
+    }
+    const comments = data.reportNotes[r.key] || "";
+    if (comments.trim()) rows.push(["Manager comments", comments.trim()]);
+    downloadFile("weekly-report-" + (r.isCurrent ? data.weekStart : r.label.replace(/[^\w]+/g, "-")) + ".csv", "\ufeff" + csvTable(rows), "text/csv;charset=utf-8");
+  }
+
+  function copyText(text) {
+    const done = () => toast("Report copied — paste it into an email or message.");
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
+  function fallbackCopy(text, done) {
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    area.setSelectionRange(0, text.length);
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch (e) {}
+    area.remove();
+    if (ok) done();
+    else toast("Couldn’t copy automatically — use Print or Save PDF instead.");
+  }
+
   function memberPage(index) {
     const m = data.team[index];
     if (!m) return top("Team member not found", "They may have been removed.") + '<button type="button" class="btn alt" data-target="team">‹ Back to Team</button>';
@@ -705,6 +1035,7 @@
       '<div><label>Status</label>' + cell("team", index, 1, "status") + '</div>' +
       '<div><label>Focus area</label>' + cell("team", index, 2, "text", "e.g. Product knowledge") + '</div>' +
       '</div></div>' +
+      memberNumbersCard(index) +
       '<div class="card pad mt"><div class="head"><div><h2>This week’s schedule</h2><p>' + memberHours(m) + ' hours scheduled</p></div></div><div class="schedule-mini">' +
       WEEKDAYS.map((d, i) => '<div class="' + (i === tIdx ? "today-col" : "") + '"><label>' + d + '</label><input class="shift" data-shift="' + index + ':' + i + '" value="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + d + ' shift"></div>').join("") +
       '</div></div>' +
@@ -724,6 +1055,21 @@
       '<div class="card pad mt"><div class="head"><div><h2>1:1 notes</h2><p>Newest first. Changes save automatically.</p></div><button type="button" class="btn small" data-add-note="' + esc(name) + '">+ New 1:1 Note</button></div>' +
       (notes.length ? notes.map(r => noteCard(r.i)).join("") : '<div class="empty">No 1:1 notes yet.</div>') +
       '</div>' + teamNamesList(false);
+  }
+
+  function memberNumbersCard(index) {
+    const m = data.team[index];
+    const st = currentStats(m);
+    const field = (key, label, value) => '<div><label>' + label + '</label><input class="cell-input" type="number" inputmode="decimal" min="0" data-person="' + index + '" data-field="' + key + '" value="' + (Number(value) || "") + '" placeholder="0"></div>';
+    const past = data.teamHistory.slice(-4).reverse().filter(h => h.entries[m[0]]);
+    return '<div class="card pad mt"><div class="head"><div><h2>This week’s numbers</h2><p>' + (st.target ? Math.round(st.pct) + "% of their " + money(st.target) + " target" : "No weekly target yet") + (st.trans ? " · $" + st.avgSale.toFixed(0) + " avg sale · " + st.perSale.toFixed(1) + " items/sale" : "") + '</p></div><button type="button" class="btn alt small" data-target="scorecard">Scorecard</button></div>' +
+      '<div class="numbers-grid">' + field("target", "Weekly target ($)", m[5]) + field("sales", "Sales ($)", st.sales) + field("trans", "Transactions", st.trans) + field("items", "Items sold", st.items) + '</div>' +
+      (st.target ? progressBar(st.pct, paceTone(st)) : "") +
+      (past.length ? '<div class="past-weeks">' + past.map(h => {
+        const p = personStats(h.entries[m[0]], h.entries[m[0]].target);
+        return '<div><span>' + esc(String(h.label).split(",")[0]) + '</span><b>' + money(p.sales) + '</b><small>' + (p.target ? Math.round(p.pct) + "% of target" : "") + '</small></div>';
+      }).join("") + '</div>' : "") +
+      '</div>';
   }
 
   function noteCard(i) {
@@ -846,7 +1192,8 @@
       '<div class="card pad mt"><div class="head"><div><h2>Your data</h2><p>Your tracker saves automatically in this browser on this device. Download a backup every week, and use it to move your tracker to another computer or browser.</p></div></div>' +
       '<div class="notice" style="margin:0 0 14px">Last backup: <b>' + (data.lastBackup ? new Date(data.lastBackup).toLocaleString() : "never") + '</b></div>' +
       '<div class="btn-row"><button type="button" class="btn" id="download-backup">Download Backup</button><label class="btn alt file-btn">Restore Backup<input type="file" id="restore-backup" accept=".json,application/json"></label>' +
-      '<button type="button" class="btn alt" id="load-sample">Load Sample Data</button><button type="button" class="btn danger" id="start-fresh">Start Fresh</button></div></div>';
+      '</div><div class="export-row"><label for="export-what">Download a spreadsheet (opens in Excel, Numbers or Google Sheets)</label><div class="btn-row"><select id="export-what" style="width:auto"><option value="all">Everything</option>' + Object.keys(EXPORTS).map(k => '<option value="' + k + '">' + EXPORTS[k] + '</option>').join("") + '</select><button type="button" class="btn alt" id="export-csv">Download Spreadsheet</button></div></div>' +
+      '<div class="btn-row" style="margin-top:12px"><button type="button" class="btn alt" id="load-sample">Load Sample Data</button><button type="button" class="btn danger" id="start-fresh">Start Fresh</button></div></div>';
   }
 
   /* ---------- Navigation & rendering ---------- */
@@ -855,12 +1202,14 @@
     dashboard: dashboard,
     daily: daily,
     team: teamPage,
+    scorecard: scorecardPage,
     coaching: coachingPage,
     notes: notesPage,
     training: trainingPage,
     goals: goalsPage,
     schedule: schedulePage,
     huddle: huddlePage,
+    report: reportPage,
     settings: settingsPage
   };
 
@@ -868,12 +1217,14 @@
     dashboard: "⌂ Dashboard",
     daily: "▥ Daily Results",
     team: "♙ Team",
+    scorecard: "★ Scorecard",
     coaching: "◎ Coaching",
     notes: "✎ 1:1 Notes",
     training: "◆ Training",
     goals: "⚑ Goals",
     schedule: "▦ Schedule",
     huddle: "☼ Huddle",
+    report: "▤ Weekly Report",
     settings: "⚙ Settings"
   };
 
@@ -925,7 +1276,7 @@
     applyTheme();
     hideTip();
     const warning = storageOk ? "" : '<div class="notice storage-warning" role="alert"><b>Changes aren’t being saved.</b> This browser isn’t letting the tracker save (Private Browsing or website data turned off). Anything you enter will be lost when you close this tab — open the tracker in a normal window, or download a backup from Settings before closing.</div>';
-    pagesEl.innerHTML = '<section class="page active">' + warning + (isMember ? memberPage(memberIndexFromRoute(parts.slice(1).join("/"))) : pages[page]()) + '</section>';
+    pagesEl.innerHTML = '<section class="page active page-' + page + '">' + warning + (isMember ? memberPage(memberIndexFromRoute(parts.slice(1).join("/"))) : pages[page]()) + '</section>';
     navEl.innerHTML = Object.keys(labels).map(key =>
       '<button class="nav ' + (key === page ? "active" : "") + '" data-nav="' + key + '">' + labels[key] + '</button>'
     ).join("") + '<button class="nav theme-toggle" id="theme-toggle" title="Change light or dark mode">☾ Theme: ' + themeNames[data.theme] + '</button>';
@@ -1025,6 +1376,43 @@
       });
     });
 
+    // Team scorecard numbers (typed on the Scorecard tab or a profile)
+    pagesEl.querySelectorAll("[data-person]").forEach(input => {
+      input.addEventListener("change", () => {
+        const member = data.team[Number(input.dataset.person)];
+        if (!member) return;
+        const value = Math.max(0, Number(input.value) || 0);
+        if (input.dataset.field === "target") member[5] = value;
+        else {
+          const entry = data.teamWeek[member[0]] || (data.teamWeek[member[0]] = { sales: 0, trans: 0, items: 0 });
+          entry[input.dataset.field] = value;
+        }
+        saveData();
+        render();
+      });
+    });
+
+    // Weekly report
+    const weekSelect = document.getElementById("report-week");
+    if (weekSelect) weekSelect.addEventListener("change", () => {
+      reportWeek = weekSelect.value;
+      render();
+    });
+    const comments = document.getElementById("report-comments");
+    if (comments) comments.addEventListener("change", () => {
+      data.reportNotes[reportData().key] = comments.value;
+      saveData();
+    });
+    bind("copy-report", () => {
+      if (comments) data.reportNotes[reportData().key] = comments.value;
+      copyText(reportText());
+    });
+    bind("report-csv", () => {
+      if (comments) data.reportNotes[reportData().key] = comments.value;
+      reportCsv();
+    });
+    bind("export-csv", () => exportCsv(document.getElementById("export-what").value));
+
     // Adding rows
     bind("add-team", () => {
       const name = (window.prompt("Team member name") || "").trim();
@@ -1033,7 +1421,7 @@
         window.alert("There’s already a team member named “" + name + "”. Add a last name or initial so you can tell them apart.");
         return;
       }
-      addRow("team", [name, "On Track", "", 0, ["", "", "", "", "", "", ""]]);
+      addRow("team", [name, "On Track", "", 0, ["", "", "", "", "", "", ""], 0]);
     });
     bind("add-coaching", () => addRow("coaching", ["", "", "", isoOffset(7), "Follow Up"]));
     bind("add-training", () => addRow("training", ["", "", 0, "Not Started", ""]));
@@ -1096,6 +1484,16 @@
           data.training.forEach(r => { if (r[0] === old) r[0] = value; });
           data.goals.forEach(g => { if (g.name === old) g.name = value; });
           data.notes.forEach(n => { if (n.name === old) n.name = value; });
+          if (data.teamWeek[old]) {
+            data.teamWeek[value] = data.teamWeek[old];
+            delete data.teamWeek[old];
+          }
+          data.teamHistory.forEach(h => {
+            if (h.entries[old]) {
+              h.entries[value] = h.entries[old];
+              delete h.entries[old];
+            }
+          });
           if (notesFilter === old) notesFilter = value;
           if (window.location.hash === "#" + memberRoute(old)) history.replaceState(null, "", "#" + memberRoute(value));
         }
@@ -1128,6 +1526,7 @@
             data.training = data.training.filter(r => r[0] !== name);
             data.goals = data.goals.filter(g => g.name !== name);
             data.notes = data.notes.filter(n => n.name !== name);
+            delete data.teamWeek[name];
           }
         } else if (!window.confirm("Delete " + (name ? "“" + name + "”" : "this row") + "?")) return;
         data[parts[0]].splice(Number(parts[1]), 1);
@@ -1191,7 +1590,14 @@
       restoreInput.value = "";
     });
 
-    bind("print-page", () => window.print());
+    bind("print-page", () => {
+      if (comments) {
+        data.reportNotes[reportData().key] = comments.value;
+        saveData();
+        render();
+      }
+      window.print();
+    });
     bind("schedule-ok", () => {
       data.scheduleCopied = false;
       saveData();
