@@ -5,6 +5,9 @@
 
   const defaults = {
     manager: "Alex Manager",
+    store: "",
+    welcomeDismissed: false,
+    lastBackup: null,
     salesGoal: 50000,
     convGoal: 20,
     atvGoal: 85,
@@ -51,21 +54,41 @@
     return JSON.parse(JSON.stringify(defaults));
   }
 
+  function blankData() {
+    const blank = cloneDefaults();
+    blank.manager = "";
+    blank.welcomeDismissed = true;
+    blank.days = [{ sales: 0, conv: 0, atv: 0, cx: 0 }];
+    blank.team = [];
+    blank.coaching = [];
+    blank.training = [];
+    blank.huddle = ["Set today’s focus in Settings", "", "", ""];
+    blank.actions = [];
+    return blank;
+  }
+
+  function isValidData(saved) {
+    return !!saved &&
+      Array.isArray(saved.days) &&
+      Array.isArray(saved.team) &&
+      Array.isArray(saved.coaching) &&
+      Array.isArray(saved.training) &&
+      Array.isArray(saved.huddle) &&
+      Array.isArray(saved.actions);
+  }
+
+  function normalize(saved) {
+    saved.metricTitles = Array.isArray(saved.metricTitles) && saved.metricTitles.length === 4 ? saved.metricTitles : JSON.parse(JSON.stringify(defaults.metricTitles));
+    if (typeof saved.store !== "string") saved.store = "";
+    if (saved.welcomeDismissed === undefined) saved.welcomeDismissed = true;
+    while (saved.huddle.length < 4) saved.huddle.push("");
+    return saved;
+  }
+
   function loadData() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
-      if (
-        saved &&
-        Array.isArray(saved.days) &&
-        Array.isArray(saved.team) &&
-        Array.isArray(saved.coaching) &&
-        Array.isArray(saved.training) &&
-        Array.isArray(saved.huddle) &&
-        Array.isArray(saved.actions)
-      ) {
-        saved.metricTitles = Array.isArray(saved.metricTitles) && saved.metricTitles.length === 4 ? saved.metricTitles : JSON.parse(JSON.stringify(defaults.metricTitles));
-        return saved;
-      }
+      if (isValidData(saved)) return normalize(saved);
     } catch (e) {}
     return cloneDefaults();
   }
@@ -119,6 +142,52 @@
     return '<td><button type="button" class="action-delete" title="Delete row" data-delete-row="' + table + ':' + row + '">×</button></td>';
   }
 
+  function downloadBackup() {
+    data.lastBackup = new Date().toISOString();
+    saveData();
+    const payload = { app: "manager-performance-tracker", version: 1, exportedAt: data.lastBackup, data: data };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "manager-tracker-backup-" + data.lastBackup.slice(0, 10) + ".json";
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(link.href);
+      link.remove();
+    }, 1000);
+  }
+
+  function restoreBackup(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        const restored = parsed && parsed.data ? parsed.data : parsed;
+        if (!isValidData(restored)) throw new Error("invalid");
+        if (!window.confirm("Replace everything in this tracker with the backup from " + (parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleDateString() : "this file") + "?")) return;
+        data = normalize(restored);
+        data.welcomeDismissed = true;
+        saveData();
+        window.alert("Backup restored.");
+        go("dashboard");
+        render();
+      } catch (e) {
+        window.alert("That file isn’t a tracker backup. Choose the .json file made by “Download Backup”.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function daysSince(iso) {
+    return iso ? Math.floor((Date.now() - new Date(iso).getTime()) / 86400000) : Infinity;
+  }
+
+  function greeting() {
+    const hour = new Date().getHours();
+    return hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+  }
+
   function money(value) {
     return "$" + Math.round(Number(value) || 0).toLocaleString();
   }
@@ -134,14 +203,14 @@
   }
 
   function top(title, subtitle) {
-    return '<div class="top"><div><h1>' + title + '</h1><div class="sub">' + subtitle + '</div></div><div class="week">Reporting week<b>' + reportingWeek() + '</b></div></div>';
+    return '<div class="top"><div><h1>' + esc(title) + '</h1><div class="sub">' + esc(subtitle) + '</div></div><div class="week">Reporting week<b>' + reportingWeek() + '</b></div></div>';
   }
 
   function kpi(name, value, goal, type, destination) {
     const percent = goal ? Math.min(100, (value / goal) * 100) : 0;
     let current = type === "money" ? money(value) : type === "atv" ? "$" + Number(value).toFixed(0) : Number(value).toFixed(1) + "%";
     let target = type === "money" ? money(goal) : type === "atv" ? "$" + goal : goal + "%";
-    return '<button type="button" class="card pad kpi kpi-link" data-target="' + (destination || "daily") + '"><b>' + name + '</b><div class="metric">' + current + '</div><div class="goal">' + target + ' goal</div><div class="bar"><i class="' + statusClass(value, goal) + '" style="width:' + percent + '%"></i></div></button>';
+    return '<button type="button" class="card pad kpi kpi-link" data-target="' + (destination || "daily") + '"><b>' + esc(name) + '</b><div class="metric">' + current + '</div><div class="goal">' + target + ' goal</div><div class="bar"><i class="' + statusClass(value, goal) + '" style="width:' + percent + '%"></i></div></button>';
   }
 
   function dashboard() {
@@ -157,7 +226,15 @@
     const overdue = data.coaching.filter(x => x[4] === "Overdue").length;
     if (overdue) attention.push(["Coaching", overdue + (overdue === 1 ? " follow-up needs" : " follow-ups need") + " attention"]);
 
-    return top("Good Morning, " + data.manager + "!", "PEOPLE · PERFORMANCE · PROGRESS") +
+    let banner = "";
+    if (!data.welcomeDismissed) {
+      banner = '<div class="card pad welcome"><div><b>Welcome to your tracker!</b><p>You’re looking at sample data so you can see how everything works. When you’re ready, start fresh and add your own team. Everything saves automatically on this computer.</p></div><div class="welcome-actions"><button type="button" class="btn" id="welcome-fresh">Start Fresh</button><button type="button" class="btn alt" id="welcome-keep">Explore Sample Data</button></div></div>';
+    } else if (daysSince(data.lastBackup) >= 7) {
+      banner = '<div class="notice backup-notice"><span>' + (data.lastBackup ? "It’s been " + daysSince(data.lastBackup) + " days since your last backup." : "You haven’t downloaded a backup yet.") + ' A backup keeps your data safe if your browser is cleared.</span><button type="button" class="btn alt" id="banner-backup">Download Backup</button></div>';
+    }
+
+    return top(greeting() + (data.manager ? ", " + data.manager : "") + "!", (data.store ? data.store + " · " : "") + "PEOPLE · PERFORMANCE · PROGRESS") +
+      banner +
       '<div class="grid4">' +
       kpi(data.metricTitles[0], sales, data.salesGoal, "money", "daily") +
       kpi(data.metricTitles[1], conv, data.convGoal, undefined, "daily") +
@@ -165,8 +242,9 @@
       kpi(data.metricTitles[3], cx, data.cxGoal, undefined, "daily") +
       '</div>' +
       '<div class="split"><div class="card pad attention"><b style="color:#a74d42;font-size:12px;letter-spacing:.08em">WHAT NEEDS ATTENTION</b>' +
+      (attention.length ? '' : '<div class="notice">Everything is on track. Nice work!</div>') +
       attention.slice(0, 3).map((item, i) => '<button type="button" class="attn attention-link" data-target="' + (item[0] === "Training" ? "training" : item[0] === "Coaching" ? "coaching" : "daily") + '"><span class="num ' + (i ? "amber" : "") + '">' + (i + 1) + '</span><div><b>' + item[0] + '</b><small>' + item[1] + '</small></div><span>›</span></button>').join("") +
-      '</div><div class="card pad focus"><div class="label">TODAY’S FOCUS</div><h2>' + data.huddle[0] + '</h2><div class="sub">' + data.huddle[1] + '</div></div></div>' +
+      '</div><div class="card pad focus"><div class="label">TODAY’S FOCUS</div><h2>' + esc(data.huddle[0]) + '</h2><div class="sub">' + esc(data.huddle[1]) + '</div></div></div>' +
       '<div class="two"><div class="card pad"><div class="head"><div><h2>Team at a glance</h2><p>' + data.team.length + ' team members</p></div></div><div class="mini">' +
       '<div><strong>' + data.team.filter(x => x[1] === "On Track").length + '</strong><span>On Track</span></div>' +
       '<div><strong>' + data.team.filter(x => x[1] === "Need Coaching").length + '</strong><span>Need Coaching</span></div>' +
@@ -177,9 +255,9 @@
 
   function daily() {
     return top("Daily KPI Tracker", "Track progress. Spot trends. Take action.") +
-      '<div class="card pad"><div class="head"><div><h2>Daily results</h2><p>Edit a number and the Dashboard updates automatically.</p></div><button class="btn" id="add-day">+ Add Day</button></div>' +
-      '<div class="table"><table><tr><th>Day</th><th>Sales</th><th>Conversion</th><th>Avg. Transaction</th><th>CX</th></tr>' +
-      data.days.map((day, i) => '<tr><td>Day ' + (i + 1) + '</td><td><input data-day="' + i + '" data-field="sales" type="number" value="' + day.sales + '"></td><td><input data-day="' + i + '" data-field="conv" type="number" step=".1" value="' + day.conv + '"></td><td><input data-day="' + i + '" data-field="atv" type="number" step=".1" value="' + day.atv + '"></td><td><input data-day="' + i + '" data-field="cx" type="number" step=".1" value="' + day.cx + '"></td></tr>').join("") +
+      '<div class="card pad"><div class="head"><div><h2>Daily results</h2><p>Edit a number and the Dashboard updates automatically.</p></div><div class="btn-row"><button class="btn alt" id="new-week">Start New Week</button><button class="btn" id="add-day">+ Add Day</button></div></div>' +
+      '<div class="table"><table><tr><th>Day</th><th>' + esc(data.metricTitles[0]) + ' ($)</th><th>' + esc(data.metricTitles[1]) + ' (%)</th><th>' + esc(data.metricTitles[2]) + ' ($)</th><th>' + esc(data.metricTitles[3]) + ' (%)</th><th></th></tr>' +
+      data.days.map((day, i) => '<tr><td><b>' + (i < 7 ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i] : "Day " + (i + 1)) + '</b></td><td><input data-day="' + i + '" data-field="sales" type="number" value="' + day.sales + '"></td><td><input data-day="' + i + '" data-field="conv" type="number" step=".1" value="' + day.conv + '"></td><td><input data-day="' + i + '" data-field="atv" type="number" step=".1" value="' + day.atv + '"></td><td><input data-day="' + i + '" data-field="cx" type="number" step=".1" value="' + day.cx + '"></td><td><button type="button" class="action-delete" title="Delete day" data-delete-day="' + i + '">×</button></td></tr>').join("") +
       '</table></div></div>';
   }
 
@@ -218,8 +296,9 @@
 
   function huddlePage() {
     return top("Today’s Team Huddle", "Align. Motivate. Win the day.") +
-      '<div class="card pad"><div class="huddle"><div class="label">TODAY’S FOCUS</div><h2>' + data.huddle[0] + '</h2><div class="sub">' + data.huddle[1] + '</div></div>' +
-      '<div class="hgrid"><div class="hbox"><b>Team Challenge</b><strong>' + data.huddle[2] + '</strong></div><div class="hbox"><b>Recognition</b><strong>' + data.huddle[3] + '</strong></div></div></div>' +
+      '<div class="card pad"><div class="huddle"><div class="label">TODAY’S FOCUS</div><h2>' + esc(data.huddle[0]) + '</h2><div class="sub">' + esc(data.huddle[1]) + '</div></div>' +
+      '<div class="hgrid"><div class="hbox"><b>Team Challenge</b><strong>' + esc(data.huddle[2]) + '</strong></div><div class="hbox"><b>Recognition</b><strong>' + esc(data.huddle[3]) + '</strong></div></div>' +
+      '<div class="btn-row" style="margin-top:12px"><button type="button" class="btn alt" data-target="settings">Edit Huddle</button><button type="button" class="btn" id="print-huddle">Print Huddle</button></div></div>' +
       '<div class="card pad" style="margin-top:15px"><div class="head"><h2>Today’s action items</h2></div>' +
       (data.actions.length ? data.actions.map(action => '<div class="action"><span class="check"></span>' + esc(action) + '</div>').join("") : '<div class="notice">No action items yet. Add them from the Dashboard.</div>') + '</div>';
   }
@@ -228,11 +307,19 @@
     return top("Settings", "Set the rules once. Use them everywhere.") +
       '<div class="card pad"><div class="head"><h2>Manager & KPI goals</h2></div><div class="two">' +
       '<div><label>Manager name</label><input id="manager-name" value="' + esc(data.manager) + '"></div>' +
+      '<div><label>Store name</label><input id="store-name" placeholder="e.g. Store #214" value="' + esc(data.store) + '"></div>' +
       '<div><label>Metric 1 title</label><input id="metric-title-0" value="' + esc(data.metricTitles[0]) + '"></div><div><label>Metric 2 title</label><input id="metric-title-1" value="' + esc(data.metricTitles[1]) + '"></div>' +
       '<div><label>Metric 3 title</label><input id="metric-title-2" value="' + esc(data.metricTitles[2]) + '"></div><div><label>Metric 4 title</label><input id="metric-title-3" value="' + esc(data.metricTitles[3]) + '"></div>' +
       '<div><label>Sales goal</label><input id="sales-goal" type="number" value="' + data.salesGoal + '"></div>' +
       '<div><label>Conversion goal %</label><input id="conv-goal" type="number" value="' + data.convGoal + '"></div><div><label>Avg. transaction goal</label><input id="atv-goal" type="number" value="' + data.atvGoal + '"></div>' +
-      '<div><label>CX goal %</label><input id="cx-goal" type="number" value="' + data.cxGoal + '"></div></div><button class="btn" id="save-settings" style="margin-top:15px">Save Settings</button></div>';
+      '<div><label>CX goal %</label><input id="cx-goal" type="number" value="' + data.cxGoal + '"></div></div><button class="btn" id="save-settings" style="margin-top:15px">Save Settings</button></div>' +
+      '<div class="card pad" style="margin-top:15px"><div class="head"><div><h2>Today’s huddle</h2><p>Shown on the Dashboard and the Huddle tab.</p></div></div><div class="two">' +
+      ["Focus headline", "Focus details", "Team challenge", "Recognition"].map((label, i) => '<div><label>' + label + '</label><input id="huddle-' + i + '" value="' + esc(data.huddle[i]) + '"></div>').join("") +
+      '</div><button class="btn" id="save-huddle" style="margin-top:15px">Save Huddle</button></div>' +
+      '<div class="card pad" style="margin-top:15px"><div class="head"><div><h2>Your data</h2><p>Your tracker saves automatically in this browser on this computer. Download a backup every week, and use it to move your tracker to another computer or browser.</p></div></div>' +
+      '<div class="notice" style="margin:0 0 14px">Last backup: <b>' + (data.lastBackup ? new Date(data.lastBackup).toLocaleString() : "never") + '</b></div>' +
+      '<div class="btn-row"><button type="button" class="btn" id="download-backup">Download Backup</button><label class="btn alt file-btn">Restore Backup<input type="file" id="restore-backup" accept=".json,application/json"></label>' +
+      '<button type="button" class="btn alt" id="load-sample">Load Sample Data</button><button type="button" class="btn danger" id="start-fresh">Start Fresh</button></div></div>';
   }
 
 
@@ -388,15 +475,85 @@
       });
     });
 
+    function startFresh() {
+      if (!window.confirm("Start fresh? This clears all team members, coaching, training, daily results and actions. Your goals and settings are kept.")) return;
+      const fresh = blankData();
+      ["salesGoal", "convGoal", "atvGoal", "cxGoal", "metricTitles", "manager", "store", "lastBackup"].forEach(key => { fresh[key] = data[key]; });
+      if (fresh.manager === defaults.manager) fresh.manager = "";
+      data = fresh;
+      saveData();
+      go("settings");
+      render();
+    }
+
+    function bind(id, handler) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener("click", handler);
+    }
+
+    bind("welcome-fresh", startFresh);
+    bind("start-fresh", startFresh);
+    bind("welcome-keep", () => {
+      data.welcomeDismissed = true;
+      saveData();
+      render();
+    });
+    bind("banner-backup", () => {
+      downloadBackup();
+      render();
+    });
+    bind("download-backup", () => {
+      downloadBackup();
+      render();
+    });
+    bind("load-sample", () => {
+      if (!window.confirm("Replace everything with the sample data? Download a backup first if you want to keep your current data.")) return;
+      data = cloneDefaults();
+      data.welcomeDismissed = true;
+      saveData();
+      go("dashboard");
+      render();
+    });
+    bind("print-huddle", () => window.print());
+    bind("new-week", () => {
+      if (!window.confirm("Start a new week? This clears the daily results table. Download a backup first if you want to keep this week’s numbers.")) return;
+      data.days = [{ sales: 0, conv: 0, atv: 0, cx: 0 }];
+      saveData();
+      render();
+    });
+    bind("save-huddle", () => {
+      data.huddle = [0, 1, 2, 3].map(i => document.getElementById("huddle-" + i).value);
+      saveData();
+      window.alert("Huddle saved.");
+      render();
+    });
+
+    const restoreInput = document.getElementById("restore-backup");
+    if (restoreInput) restoreInput.addEventListener("change", () => {
+      if (restoreInput.files && restoreInput.files[0]) restoreBackup(restoreInput.files[0]);
+      restoreInput.value = "";
+    });
+
+    pagesEl.querySelectorAll("[data-delete-day]").forEach(button => {
+      button.addEventListener("click", () => {
+        if (!window.confirm("Delete this day’s results?")) return;
+        data.days.splice(Number(button.dataset.deleteDay), 1);
+        saveData();
+        render();
+      });
+    });
+
     const saveSettings = document.getElementById("save-settings");
     if (saveSettings) saveSettings.addEventListener("click", () => {
-      data.manager = document.getElementById("manager-name").value;
+      data.manager = document.getElementById("manager-name").value.trim();
+      data.store = document.getElementById("store-name").value.trim();
       data.salesGoal = Number(document.getElementById("sales-goal").value) || 0;
       data.convGoal = Number(document.getElementById("conv-goal").value) || 0;
       data.atvGoal = Number(document.getElementById("atv-goal").value) || 0;
       data.cxGoal = Number(document.getElementById("cx-goal").value) || 0;
       data.metricTitles = [0, 1, 2, 3].map(i => document.getElementById("metric-title-" + i).value.trim() || defaults.metricTitles[i]);
       saveData();
+      window.alert("Settings saved.");
       render();
     });
   }
