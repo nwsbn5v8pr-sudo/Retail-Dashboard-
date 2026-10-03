@@ -280,6 +280,10 @@
     return row[4] === "Overdue" || (row[4] !== "Completed" && !!row[3] && row[3] < todayIso());
   }
 
+  function trainingOverdue(row) {
+    return row[3] !== "Completed" && !!row[4] && row[4] < todayIso();
+  }
+
   const statusOptions = {
     team: ["On Track", "Needs Coaching", "Needs Training"],
     coaching: ["On Track", "Follow Up", "Overdue", "Completed"],
@@ -473,8 +477,8 @@
   function teamPage() {
     return top("Team", "Everyone on your team at a glance. Open a profile for the full picture.") +
       '<div class="card pad"><div class="head"><div><h2>Team members</h2><p>Click any cell to edit. Changing a name updates it everywhere.</p></div><button class="btn" id="add-team">+ Add Team Member</button></div>' +
-      (data.team.length ? '<div class="table"><table><thead><tr><th>Name</th><th>Status</th><th>Focus area</th><th>Training %</th><th>Hours this week</th><th></th><th></th></tr></thead><tbody>' +
-        data.team.map((x, i) => '<tr><td>' + cell("team", i, 0, "text", "Name") + '</td><td>' + cell("team", i, 1, "status") + '</td><td>' + cell("team", i, 2, "text", "e.g. Product knowledge") + '</td><td>' + cell("team", i, 3, "percent") + progressBar(Number(x[3]) || 0) + '</td><td>' + memberHours(x) + '</td><td><button type="button" class="btn alt small" data-target="member/' + i + '">Profile ›</button></td>' + deleteCell("team", i) + '</tr>').join("") +
+      (data.team.length ? '<div class="table"><table><thead><tr><th>Name</th><th>Status</th><th>Focus area</th><th>Hours this week</th><th></th><th></th></tr></thead><tbody>' +
+        data.team.map((x, i) => '<tr><td>' + cell("team", i, 0, "text", "Name") + '</td><td>' + cell("team", i, 1, "status") + '</td><td>' + cell("team", i, 2, "text", "e.g. Product knowledge") + '</td><td>' + memberHours(x) + '</td><td><button type="button" class="btn alt small" data-target="member/' + i + '">Profile ›</button></td>' + deleteCell("team", i) + '</tr>').join("") +
         '</tbody></table></div>' : '<div class="notice">No team members yet. Click “+ Add Team Member” to get started.</div>') +
       '</div>';
   }
@@ -506,7 +510,7 @@
       (coaching.length ? coaching.map(r => '<div class="list-row"><div><b>' + esc(r.x[1] || "Coaching") + '</b><small>' + esc(r.x[2] || "") + (r.x[3] ? " · follow up " + shortDate(r.x[3]) : "") + '</small></div><span class="status ' + (coachingOverdue(r.x) ? "bad" : statusTone("coaching", r.x[4])) + '">' + (coachingOverdue(r.x) ? "Overdue" : esc(r.x[4])) + '</span></div>').join("") : '<div class="empty">No coaching yet.</div>') +
       '</div>' +
       '<div class="card pad"><div class="head"><div><h2>Training</h2><p>' + training.length + ' assigned</p></div><button type="button" class="btn alt small" data-add-for="training">+ Add</button></div>' +
-      (training.length ? training.map(r => '<div class="list-row"><div style="flex:1"><b>' + esc(r.x[1] || "Training") + '</b><small>' + esc(r.x[3]) + (r.x[4] ? " · due " + shortDate(r.x[4]) : "") + '</small>' + progressBar(Number(r.x[2]) || 0) + '</div><b>' + (Number(r.x[2]) || 0) + '%</b></div>').join("") : '<div class="empty">No training assigned.</div>') +
+      (training.length ? training.map(r => '<div class="list-row"><div><b>' + esc(r.x[1] || "Training") + '</b><small>' + (r.x[4] ? "Due " + shortDate(r.x[4]) : "No due date") + '</small></div><span class="status ' + (trainingOverdue(r.x) ? "bad" : statusTone("training", r.x[3])) + '">' + (trainingOverdue(r.x) ? "Overdue" : esc(r.x[3])) + '</span></div>').join("") : '<div class="empty">No training assigned.</div>') +
       '</div></div>' +
       '<div class="card pad mt"><div class="head"><div><h2>Goals</h2><p>' + goals.length + ' on record</p></div><button type="button" class="btn alt small" data-add-for="goals">+ Add</button></div>' +
       (goals.length ? goals.map(r => {
@@ -560,17 +564,16 @@
   }
 
   function trainingPage() {
-    const overall = data.training.length ? Math.round(data.training.reduce((sum, x) => sum + (Number(x[2]) || 0), 0) / data.training.length) : 0;
     return top("Training", "Build skills. Track progress. Keep everyone ready.") +
       '<div class="grid4">' +
       tile("Completed", data.training.filter(x => x[3] === "Completed").length, "Assignments") +
       tile("In progress", data.training.filter(x => x[3] === "In Progress").length, "Assignments") +
       tile("Not started", data.training.filter(x => x[3] === "Not Started").length, "Assignments") +
-      tile("Overall", overall + "%", "Average progress") +
+      tile("Overdue", data.training.filter(trainingOverdue).length, "Past their due date") +
       '</div>' +
       '<div class="card pad mt"><div class="head"><div><h2>Training tracker</h2><p>Click any cell to edit.</p></div><button class="btn" id="add-training">+ Add Training</button></div>' +
-      (data.training.length ? '<div class="table"><table><thead><tr><th>Team member</th><th>Training</th><th>Progress %</th><th>Status</th><th>Due</th><th></th></tr></thead><tbody>' +
-        data.training.map((x, i) => '<tr><td>' + cell("training", i, 0, "name", "Name") + '</td><td>' + cell("training", i, 1, "text", "Training name") + '</td><td>' + cell("training", i, 2, "percent") + progressBar(Number(x[2]) || 0, x[2] < 70 ? "bad" : x[2] < 80 ? "warn" : "") + '</td><td>' + cell("training", i, 3, "status") + '</td><td>' + cell("training", i, 4, "date") + '</td>' + deleteCell("training", i) + '</tr>').join("") +
+      (data.training.length ? '<div class="table"><table><thead><tr><th>Team member</th><th>Training</th><th>Status</th><th>Due</th><th></th></tr></thead><tbody>' +
+        data.training.map((x, i) => '<tr><td>' + cell("training", i, 0, "name", "Name") + '</td><td>' + cell("training", i, 1, "text", "Training name") + '</td><td>' + cell("training", i, 3, "status") + '</td><td>' + cell("training", i, 4, "date") + '</td>' + deleteCell("training", i) + '</tr>').join("") +
         '</tbody></table></div>' : '<div class="notice">No training assigned yet.</div>') +
       '</div>' + teamNamesList(false);
   }
