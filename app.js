@@ -51,6 +51,43 @@
 
   const metricDefaults = ["Sales", "Conversion", "Avg. Sale", "Customer Experience"];
 
+  const WIDGET_NAMES = {
+    kpis: "Metric cards",
+    salesChart: "Sales by day",
+    attention: "What needs attention",
+    focus: "Today’s focus",
+    working: "Working today",
+    team: "Team at a glance",
+    upcoming: "Coming up",
+    actions: "Today’s key actions"
+  };
+
+  const WIDGET_SIZES = { full: "Full width", large: "Two-thirds", half: "Half", small: "One-third" };
+
+  function defaultLayout() {
+    return [
+      { id: "kpis", size: "full" },
+      { id: "salesChart", size: "large" },
+      { id: "attention", size: "small" },
+      { id: "focus", size: "large" },
+      { id: "working", size: "small" },
+      { id: "team", size: "small" },
+      { id: "upcoming", size: "small" },
+      { id: "actions", size: "small" }
+    ];
+  }
+
+  // Keeps a saved layout valid: known cards only, no duplicates, any new cards added at the end.
+  function normalizeLayout(layout) {
+    const seen = {};
+    const clean = (Array.isArray(layout) ? layout : []).filter(w => w && WIDGET_NAMES[w.id] && !seen[w.id] && (seen[w.id] = true))
+      .map(w => ({ id: w.id, size: WIDGET_SIZES[w.size] ? w.size : "half", hidden: !!w.hidden }));
+    defaultLayout().forEach(w => { if (!seen[w.id]) clean.push(w); });
+    return clean;
+  }
+
+  const GEAR_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+
   function makeSample() {
     return {
       manager: "Alex Manager",
@@ -58,6 +95,7 @@
       theme: "auto",
       welcomeDismissed: false,
       lastBackup: null,
+      dashboard: defaultLayout(),
       salesGoal: 50000,
       convGoal: 20,
       atvGoal: 85,
@@ -144,6 +182,7 @@
     if (["auto", "light", "dark"].indexOf(saved.theme) < 0) saved.theme = "auto";
     if (saved.welcomeDismissed === undefined) saved.welcomeDismissed = true;
     ["history", "goals", "notes"].forEach(key => { if (!Array.isArray(saved[key])) saved[key] = []; });
+    saved.dashboard = normalizeLayout(saved.dashboard);
     while (saved.huddle.length < 4) saved.huddle.push("");
     saved.team.forEach(row => {
       if (renames[row[1]]) row[1] = renames[row[1]];
@@ -165,6 +204,7 @@
 
   let data = loadData();
   let notesFilter = "";
+  let editingDashboard = false;
 
   function saveData() {
     try {
@@ -320,8 +360,8 @@
 
   /* ---------- Building blocks ---------- */
 
-  function top(title, subtitle) {
-    return '<div class="top"><div><h1>' + esc(title) + '</h1><div class="sub">' + esc(subtitle) + '</div></div><div class="week">This week<b>' + weekLabel(0) + '</b></div></div>';
+  function top(title, subtitle, extra) {
+    return '<div class="top"><div><h1>' + esc(title) + '</h1><div class="sub">' + esc(subtitle) + '</div></div><div class="top-right"><div class="week">This week<b>' + weekLabel(0) + '</b></div>' + (extra || "") + '</div></div>';
   }
 
   function cell(table, row, col, type, placeholder) {
@@ -422,36 +462,59 @@
     const working = data.team.filter(m => isWorking(m[4][todayIndex()]));
     const soon = upcoming().slice(0, 5);
 
-    return top(greeting() + (data.manager ? ", " + data.manager : "") + "!", (data.store ? data.store + " · " : "") + "Here’s how your week is going.") +
-      banner +
-      '<div class="grid4">' +
-      kpi(0, week.sales, data.salesGoal, "money", last ? compare(last.sales / (last.days || 7), week.sales / (week.days || 1)) : null) +
-      kpi(1, week.conv, data.convGoal, "pct", last ? compare(last.conv, week.conv) : null) +
-      kpi(2, week.atv, data.atvGoal, "atv", last ? compare(last.atv, week.atv) : null) +
-      kpi(3, week.cx, data.cxGoal, "pct", last ? compare(last.cx, week.cx) : null) +
-      '</div>' +
-      '<div class="split">' + salesChart +
-      '<div class="card pad attention"><div class="attn-title">WHAT NEEDS ATTENTION</div>' +
-      (attention.length ? "" : '<div class="notice">Everything is on track. Nice work!</div>') +
-      attention.slice(0, 4).map((item, i) => '<button type="button" class="attn attention-link" data-target="' + item[2] + '"><span class="num ' + (i ? "amber" : "") + '">' + (i + 1) + '</span><div><b>' + esc(item[0]) + '</b><small>' + item[1] + '</small></div><span aria-hidden="true">›</span></button>').join("") +
-      '</div></div>' +
-      '<div class="split"><div class="card pad focus"><div class="label">TODAY’S FOCUS</div><h2>' + esc(data.huddle[0]) + '</h2><div class="sub">' + esc(data.huddle[1]) + '</div></div>' +
-      '<div class="card pad"><div class="head"><div><h2>Working today</h2><p>' + ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][todayIndex()] + ' · ' + working.length + (working.length === 1 ? " person" : " people") + '</p></div><button type="button" class="btn alt small" data-target="schedule">Schedule</button></div>' +
-      (working.length ? working.map(m => '<div class="list-row">' + personLink(m[0]) + '<span class="status neutral">' + esc(m[4][todayIndex()]) + '</span></div>').join("") : '<div class="empty">No one is scheduled today. Add shifts on the Schedule tab.</div>') +
-      '</div></div>' +
-      '<div class="grid-auto">' +
-      '<div class="card pad"><div class="head"><div><h2>Team at a glance</h2><p>' + data.team.length + (data.team.length === 1 ? " team member" : " team members") + ' · tap a name for their profile</p></div></div><div class="mini">' +
-      '<div><strong>' + data.team.filter(x => x[1] === "On Track").length + '</strong><span>On Track</span></div>' +
-      '<div><strong>' + data.team.filter(x => x[1] === "Needs Coaching").length + '</strong><span>Needs Coaching</span></div>' +
-      '<div><strong>' + data.team.filter(x => x[1] === "Needs Training").length + '</strong><span>Needs Training</span></div></div>' +
-      '<div class="people">' + data.team.map((m, i) => '<button type="button" class="chip" data-target="member/' + i + '"><span class="dot ' + (statusTone("team", m[1]) === "good" ? "" : statusTone("team", m[1])) + '"></span>' + esc(m[0] || "Unnamed") + '</button>').join("") + '</div></div>' +
-      '<div class="card pad"><div class="head"><div><h2>Coming up</h2><p>Due in the next 7 days, plus anything overdue.</p></div></div>' +
-      (soon.length ? soon.map(x => '<button type="button" class="list-row row-link" data-target="' + x.target + '"><div><b>' + esc(x.what) + '</b><small>' + esc(x.who || "") + '</small></div><span class="status ' + x.tag[1] + '">' + esc(x.tag[0]) + '</span></button>').join("") : '<div class="empty">Nothing due this week.</div>') +
-      '</div>' +
-      '<div class="card pad"><div class="head"><div><h2>Today’s key actions</h2><p>Keep it short. Keep it moving.</p></div><button type="button" class="btn small" id="add-action">+ Add</button></div>' +
-      (data.actions.length ? "" : '<div class="empty">No actions yet.</div>') +
-      data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + esc(action) + '" placeholder="New action" aria-label="Action ' + (i + 1) + '"><button type="button" class="action-delete" aria-label="Delete action" data-delete-action="' + i + '">×</button></div>').join("") +
-      '</div></div>';
+    const widgets = {
+      kpis: () => '<div class="grid4">' +
+        kpi(0, week.sales, data.salesGoal, "money", last ? compare(last.sales / (last.days || 7), week.sales / (week.days || 1)) : null) +
+        kpi(1, week.conv, data.convGoal, "pct", last ? compare(last.conv, week.conv) : null) +
+        kpi(2, week.atv, data.atvGoal, "atv", last ? compare(last.atv, week.atv) : null) +
+        kpi(3, week.cx, data.cxGoal, "pct", last ? compare(last.cx, week.cx) : null) +
+        '</div>',
+      salesChart: () => salesChart,
+      attention: () => '<div class="card pad attention"><div class="attn-title">WHAT NEEDS ATTENTION</div>' +
+        (attention.length ? "" : '<div class="notice">Everything is on track. Nice work!</div>') +
+        attention.slice(0, 4).map((item, i) => '<button type="button" class="attn attention-link" data-target="' + item[2] + '"><span class="num ' + (i ? "amber" : "") + '">' + (i + 1) + '</span><div><b>' + esc(item[0]) + '</b><small>' + item[1] + '</small></div><span aria-hidden="true">›</span></button>').join("") +
+        '</div>',
+      focus: () => '<div class="card pad focus"><div class="label">TODAY’S FOCUS</div><h2>' + esc(data.huddle[0]) + '</h2><div class="sub">' + esc(data.huddle[1]) + '</div></div>',
+      working: () => '<div class="card pad"><div class="head"><div><h2>Working today</h2><p>' + ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][todayIndex()] + ' · ' + working.length + (working.length === 1 ? " person" : " people") + '</p></div><button type="button" class="btn alt small" data-target="schedule">Schedule</button></div>' +
+        (working.length ? working.map(m => '<div class="list-row">' + personLink(m[0]) + '<span class="status neutral">' + esc(m[4][todayIndex()]) + '</span></div>').join("") : '<div class="empty">No one is scheduled today. Add shifts on the Schedule tab.</div>') +
+        '</div>',
+      team: () => '<div class="card pad"><div class="head"><div><h2>Team at a glance</h2><p>' + data.team.length + (data.team.length === 1 ? " team member" : " team members") + ' · tap a name for their profile</p></div></div><div class="mini">' +
+        '<div><strong>' + data.team.filter(x => x[1] === "On Track").length + '</strong><span>On Track</span></div>' +
+        '<div><strong>' + data.team.filter(x => x[1] === "Needs Coaching").length + '</strong><span>Needs Coaching</span></div>' +
+        '<div><strong>' + data.team.filter(x => x[1] === "Needs Training").length + '</strong><span>Needs Training</span></div></div>' +
+        '<div class="people">' + data.team.map((m, i) => '<button type="button" class="chip" data-target="member/' + i + '"><span class="dot ' + (statusTone("team", m[1]) === "good" ? "" : statusTone("team", m[1])) + '"></span>' + esc(m[0] || "Unnamed") + '</button>').join("") + '</div></div>',
+      upcoming: () => '<div class="card pad"><div class="head"><div><h2>Coming up</h2><p>Due in the next 7 days, plus anything overdue.</p></div></div>' +
+        (soon.length ? soon.map(x => '<button type="button" class="list-row row-link" data-target="' + x.target + '"><div><b>' + esc(x.what) + '</b><small>' + esc(x.who || "") + '</small></div><span class="status ' + x.tag[1] + '">' + esc(x.tag[0]) + '</span></button>').join("") : '<div class="empty">Nothing due this week.</div>') +
+        '</div>',
+      actions: () => '<div class="card pad"><div class="head"><div><h2>Today’s key actions</h2><p>Keep it short. Keep it moving.</p></div><button type="button" class="btn small" id="add-action">+ Add</button></div>' +
+        (data.actions.length ? "" : '<div class="empty">No actions yet.</div>') +
+        data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + esc(action) + '" placeholder="New action" aria-label="Action ' + (i + 1) + '"><button type="button" class="action-delete" aria-label="Delete action" data-delete-action="' + i + '">×</button></div>').join("") +
+        '</div>'
+    };
+
+    const layout = data.dashboard;
+    const visible = layout.filter(w => !w.hidden);
+    const hidden = layout.filter(w => w.hidden);
+    const gear = '<button type="button" class="icon-btn' + (editingDashboard ? " on" : "") + '" id="dash-edit" aria-pressed="' + editingDashboard + '" aria-label="Customize dashboard" title="Customize dashboard">' + GEAR_ICON + '</button>';
+
+    const editBar = editingDashboard ? '<div class="card pad edit-bar"><div><b>Customize your dashboard</b><p>Drag a card by its ⠿ handle (or use the arrows) to move it. Change a card’s width, or hide cards you don’t use. Changes save automatically.</p></div>' +
+      '<div class="btn-row"><button type="button" class="btn alt" id="dash-reset">Reset Layout</button><button type="button" class="btn" id="dash-done">Done</button></div>' +
+      (hidden.length ? '<div class="hidden-tray"><span>Hidden cards:</span>' + hidden.map(w => '<button type="button" class="chip" data-show-widget="' + w.id + '">+ ' + esc(WIDGET_NAMES[w.id]) + '</button>').join("") + '</div>' : "") +
+      '</div>' : "";
+
+    const tools = (w, i) => '<div class="widget-tools">' +
+      '<button type="button" class="drag-handle" data-drag="' + w.id + '" aria-label="Drag to move ' + esc(WIDGET_NAMES[w.id]) + '"><span aria-hidden="true">⠿</span> ' + esc(WIDGET_NAMES[w.id]) + '</button>' +
+      '<span class="tool-group"><select data-widget-size="' + w.id + '" aria-label="Card width">' + Object.keys(WIDGET_SIZES).map(k => '<option value="' + k + '"' + (k === w.size ? " selected" : "") + '>' + WIDGET_SIZES[k] + '</option>').join("") + '</select>' +
+      '<button type="button" class="tool-btn" data-move-widget="' + w.id + ':-1"' + (i === 0 ? " disabled" : "") + ' aria-label="Move earlier">↑</button>' +
+      '<button type="button" class="tool-btn" data-move-widget="' + w.id + ':1"' + (i === visible.length - 1 ? " disabled" : "") + ' aria-label="Move later">↓</button>' +
+      '<button type="button" class="tool-btn" data-hide-widget="' + w.id + '">Hide</button></span></div>';
+
+    return top(greeting() + (data.manager ? ", " + data.manager : "") + "!", (data.store ? data.store + " · " : "") + "Here’s how your week is going.", gear) +
+      (editingDashboard ? editBar : banner) +
+      '<div class="dash-grid' + (editingDashboard ? " editing" : "") + '">' +
+      (visible.length ? "" : '<div class="notice w-full">Every card is hidden. Tap the gear to show some again.</div>') +
+      visible.map((w, i) => '<div class="widget w-' + w.size + '" data-widget="' + w.id + '">' + (editingDashboard ? tools(w, i) : "") + '<div class="widget-body">' + widgets[w.id]() + '</div></div>').join("") +
+      '</div>';
   }
 
   function daily() {
@@ -704,6 +767,7 @@
     const parts = route.split("/");
     const isMember = parts[0] === "member";
     const page = isMember ? "team" : pages[parts[0]] ? parts[0] : "dashboard";
+    if (page !== "dashboard") editingDashboard = false;
     const pagesEl = document.getElementById("pages");
     const navEl = document.getElementById("nav");
     if (!pagesEl || !navEl) return;
@@ -731,7 +795,7 @@
   function startFresh() {
     if (!window.confirm("Start fresh? This clears your team, coaching, 1:1 notes, training, goals, schedule and results. Your name, store, metrics, goals and theme are kept.")) return;
     const fresh = blankData();
-    ["salesGoal", "convGoal", "atvGoal", "cxGoal", "metricTitles", "manager", "store", "lastBackup", "theme"].forEach(key => { fresh[key] = data[key]; });
+    ["salesGoal", "convGoal", "atvGoal", "cxGoal", "metricTitles", "manager", "store", "lastBackup", "theme", "dashboard"].forEach(key => { fresh[key] = data[key]; });
     if (fresh.manager === "Alex Manager") fresh.manager = "";
     data = fresh;
     saveData();
@@ -760,6 +824,8 @@
         render();
       });
     });
+
+    bindDashboardEditing(pagesEl);
 
     // Daily results
     bind("add-day", () => addRow("days", { sales: 0, conv: 0, atv: 0, cx: 0 }));
@@ -915,9 +981,11 @@
     bind("load-sample", () => {
       if (!window.confirm("Replace everything with the sample data? Download a backup first if you want to keep your current data.")) return;
       const theme = data.theme;
+      const layout = data.dashboard;
       data = makeSample();
       data.welcomeDismissed = true;
       data.theme = theme;
+      data.dashboard = layout;
       saveData();
       go("dashboard");
       render();
@@ -953,6 +1021,100 @@
       saveData();
       window.alert("Settings saved.");
       render();
+    });
+  }
+
+  /* ---------- Dashboard customizing ---------- */
+
+  function moveWidget(id, toIndex) {
+    const layout = data.dashboard;
+    const from = layout.findIndex(w => w.id === id);
+    if (from < 0 || toIndex < 0 || toIndex >= layout.length || from === toIndex) return;
+    const moved = layout.splice(from, 1)[0];
+    layout.splice(toIndex, 0, moved);
+    saveData();
+    render();
+  }
+
+  function bindDashboardEditing(pagesEl) {
+    bind("dash-edit", () => {
+      editingDashboard = !editingDashboard;
+      render();
+    });
+    bind("dash-done", () => {
+      editingDashboard = false;
+      render();
+    });
+    bind("dash-reset", () => {
+      if (!window.confirm("Put every dashboard card back in its original place and size?")) return;
+      data.dashboard = defaultLayout();
+      saveData();
+      render();
+    });
+    const find = id => data.dashboard.find(w => w.id === id);
+
+    pagesEl.querySelectorAll("[data-widget-size]").forEach(select => {
+      select.addEventListener("change", () => {
+        find(select.dataset.widgetSize).size = select.value;
+        saveData();
+        render();
+      });
+    });
+    pagesEl.querySelectorAll("[data-hide-widget]").forEach(button => {
+      button.addEventListener("click", () => {
+        find(button.dataset.hideWidget).hidden = true;
+        saveData();
+        render();
+      });
+    });
+    pagesEl.querySelectorAll("[data-show-widget]").forEach(button => {
+      button.addEventListener("click", () => {
+        find(button.dataset.showWidget).hidden = false;
+        saveData();
+        render();
+      });
+    });
+    // Arrows step past hidden cards so every tap visibly moves the card.
+    pagesEl.querySelectorAll("[data-move-widget]").forEach(button => {
+      button.addEventListener("click", () => {
+        const parts = button.dataset.moveWidget.split(":");
+        const visible = data.dashboard.filter(w => !w.hidden);
+        const neighbor = visible[visible.findIndex(w => w.id === parts[0]) + Number(parts[1])];
+        if (neighbor) moveWidget(parts[0], data.dashboard.indexOf(neighbor));
+      });
+    });
+
+    // Drag with mouse, pen or finger: the card you drop on gives up its spot.
+    pagesEl.querySelectorAll("[data-drag]").forEach(handle => {
+      handle.addEventListener("pointerdown", e => {
+        if (e.button > 0) return;
+        e.preventDefault();
+        const id = handle.dataset.drag;
+        const widget = handle.closest(".widget");
+        let target = null;
+        widget.classList.add("dragging");
+        const clear = () => pagesEl.querySelectorAll(".drop-target").forEach(w => w.classList.remove("drop-target"));
+        const onMove = ev => {
+          const el = document.elementFromPoint(ev.clientX, ev.clientY);
+          const over = el && el.closest(".widget");
+          clear();
+          target = over && over !== widget ? over.dataset.widget : null;
+          if (target) over.classList.add("drop-target");
+          if (ev.clientY < 70) window.scrollBy(0, -14);
+          else if (ev.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
+        };
+        const onEnd = () => {
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onEnd);
+          window.removeEventListener("pointercancel", onEnd);
+          widget.classList.remove("dragging");
+          clear();
+          if (target) moveWidget(id, data.dashboard.findIndex(w => w.id === target));
+        };
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onEnd);
+        window.addEventListener("pointercancel", onEnd);
+      });
     });
   }
 
