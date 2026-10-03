@@ -78,6 +78,47 @@
     } catch (e) {}
   }
 
+  function esc(value) {
+    return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function reportingWeek() {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    const fmt = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return fmt(start) + " – " + fmt(end) + ", " + end.getFullYear();
+  }
+
+  const statusOptions = {
+    team: ["On Track", "Need Coaching", "Need Training"],
+    coaching: ["On Track", "Follow Up", "Overdue"],
+    training: ["Not Started", "In Progress", "Completed"]
+  };
+
+  function cell(table, row, col, type, placeholder) {
+    const value = data[table][row][col];
+    const attrs = ' data-table="' + table + '" data-row="' + row + '" data-col="' + col + '"';
+    if (type === "status") {
+      return '<select class="status status-select ' + statusTone(table, value) + '"' + attrs + '>' +
+        statusOptions[table].map(o => '<option' + (o === value ? " selected" : "") + '>' + o + '</option>').join("") + '</select>';
+    }
+    if (type === "number") {
+      return '<input class="cell-input cell-num" type="number" min="0" max="100" data-type="number"' + attrs + ' value="' + esc(value) + '">';
+    }
+    return '<input class="cell-input" placeholder="' + esc(placeholder || "") + '"' + attrs + ' value="' + esc(value) + '">';
+  }
+
+  function statusTone(table, value) {
+    if (table === "team") return value === "On Track" ? "good" : value === "Need Training" ? "warn" : "bad";
+    if (table === "coaching") return value === "Overdue" ? "bad" : value === "Follow Up" ? "warn" : "good";
+    return value === "Not Started" ? "bad" : value === "In Progress" ? "warn" : "good";
+  }
+
+  function deleteCell(table, row) {
+    return '<td><button type="button" class="action-delete" title="Delete row" data-delete-row="' + table + ':' + row + '">×</button></td>';
+  }
+
   function money(value) {
     return "$" + Math.round(Number(value) || 0).toLocaleString();
   }
@@ -93,7 +134,7 @@
   }
 
   function top(title, subtitle) {
-    return '<div class="top"><div><h1>' + title + '</h1><div class="sub">' + subtitle + '</div></div><div class="week">Reporting week<b>Sep 28 – Oct 4, 2026</b></div></div>';
+    return '<div class="top"><div><h1>' + title + '</h1><div class="sub">' + subtitle + '</div></div><div class="week">Reporting week<b>' + reportingWeek() + '</b></div></div>';
   }
 
   function kpi(name, value, goal, type, destination) {
@@ -113,7 +154,8 @@
     if (sales < data.salesGoal) attention.push(["Sales", money(data.salesGoal - sales) + " remaining to weekly goal"]);
     const openTraining = data.training.filter(x => x[3] !== "Completed").length;
     if (openTraining) attention.push(["Training", openTraining + " assignments still open"]);
-    if (data.coaching.some(x => x[4] === "Overdue")) attention.push(["Coaching", "1 follow-up needs attention"]);
+    const overdue = data.coaching.filter(x => x[4] === "Overdue").length;
+    if (overdue) attention.push(["Coaching", overdue + (overdue === 1 ? " follow-up needs" : " follow-ups need") + " attention"]);
 
     return top("Good Morning, " + data.manager + "!", "PEOPLE · PERFORMANCE · PROGRESS") +
       '<div class="grid4">' +
@@ -129,8 +171,8 @@
       '<div><strong>' + data.team.filter(x => x[1] === "On Track").length + '</strong><span>On Track</span></div>' +
       '<div><strong>' + data.team.filter(x => x[1] === "Need Coaching").length + '</strong><span>Need Coaching</span></div>' +
       '<div><strong>' + data.team.filter(x => x[1] === "Need Training").length + '</strong><span>Need Training</span></div>' +
-      '</div></div><div class="card pad"><div class="head"><div><h2>Today’s key actions</h2><p>Keep it short. Keep it moving.</p></div></div>' +
-      data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + action.replace(/"/g, '&quot;') + '"><button type="button" class="action-delete" data-delete-action="' + i + '">×</button></div>').join("") + '</div></div>';
+      '</div></div><div class="card pad"><div class="head"><div><h2>Today’s key actions</h2><p>Keep it short. Keep it moving.</p></div><button type="button" class="btn" id="add-action">+ Add Action</button></div>' +
+      data.actions.map((action, i) => '<div class="action action-edit"><input class="action-input" data-action="' + i + '" value="' + esc(action) + '"><button type="button" class="action-delete" data-delete-action="' + i + '">×</button></div>').join("") + '</div></div>';
   }
 
   function daily() {
@@ -143,9 +185,9 @@
 
   function teamPage() {
     return top("Team", "Know who needs you — without digging through a spreadsheet.") +
-      '<div class="card pad"><div class="head"><div><h2>Team overview</h2><p>Performance, focus and training in one view.</p></div><button class="btn" id="add-team">+ Add Team Member</button></div>' +
-      '<div class="table"><table><tr><th>Employee</th><th>Status</th><th>Focus</th><th>Training</th></tr>' +
-      data.team.map(x => '<tr><td><b>' + x[0] + '</b></td><td><span class="status ' + (x[1] === "On Track" ? "good" : x[1].includes("Training") ? "warn" : "bad") + '">' + x[1] + '</span></td><td>' + x[2] + '</td><td>' + x[3] + '%<div class="bar"><i style="width:' + x[3] + '%"></i></div></td></tr>').join("") +
+      '<div class="card pad"><div class="head"><div><h2>Team overview</h2><p>Performance, focus and training in one view. Click any cell to edit.</p></div><button class="btn" id="add-team">+ Add Team Member</button></div>' +
+      '<div class="table"><table><tr><th>Employee</th><th>Status</th><th>Focus</th><th>Training %</th><th></th></tr>' +
+      data.team.map((x, i) => '<tr><td>' + cell("team", i, 0, "text", "Name") + '</td><td>' + cell("team", i, 1, "status") + '</td><td>' + cell("team", i, 2, "text", "Focus area") + '</td><td>' + cell("team", i, 3, "number") + '<div class="bar"><i style="width:' + Math.min(100, Number(x[3]) || 0) + '%"></i></div></td>' + deleteCell("team", i) + '</tr>').join("") +
       '</table></div></div>';
   }
 
@@ -156,8 +198,8 @@
       '<div class="card pad kpi"><b>Overdue</b><div class="metric">' + data.coaching.filter(x => x[4] === "Overdue").length + '</div><div class="goal">Needs attention</div></div>' +
       '<div class="card pad kpi"><b>Team Covered</b><div class="metric">' + new Set(data.coaching.map(x => x[0])).size + '/' + data.team.length + '</div><div class="goal">Members</div></div></div>' +
       '<div class="card pad" style="margin-top:15px"><div class="head"><h2>Coaching tracker</h2><button class="btn" id="add-coaching">+ Add Coaching</button></div>' +
-      '<div class="table"><table><tr><th>Employee</th><th>Focus</th><th>Next Step</th><th>Follow Up</th><th>Status</th></tr>' +
-      data.coaching.map(x => '<tr><td><b>' + x[0] + '</b></td><td>' + x[1] + '</td><td>' + x[2] + '</td><td>' + x[3] + '</td><td><span class="status ' + (x[4] === "Overdue" ? "bad" : x[4] === "Follow Up" ? "warn" : "good") + '">' + x[4] + '</span></td></tr>').join("") +
+      '<div class="table"><table><tr><th>Employee</th><th>Focus</th><th>Next Step</th><th>Follow Up</th><th>Status</th><th></th></tr>' +
+      data.coaching.map((x, i) => '<tr><td>' + cell("coaching", i, 0, "text", "Name") + '</td><td>' + cell("coaching", i, 1, "text", "Focus area") + '</td><td>' + cell("coaching", i, 2, "text", "Next step") + '</td><td>' + cell("coaching", i, 3, "text", "e.g. 10/12") + '</td><td>' + cell("coaching", i, 4, "status") + '</td>' + deleteCell("coaching", i) + '</tr>').join("") +
       '</table></div></div>';
   }
 
@@ -169,8 +211,8 @@
       '<div class="card pad kpi"><b>Not Started</b><div class="metric">' + data.training.filter(x => x[3] === "Not Started").length + '</div><div class="goal">Assignments</div></div>' +
       '<div class="card pad kpi"><b>Overall</b><div class="metric">' + overall + '%</div><div class="goal">Average completion</div></div></div>' +
       '<div class="card pad" style="margin-top:15px"><div class="head"><h2>Training tracker</h2><button class="btn" id="add-training">+ Add Training</button></div>' +
-      '<div class="table"><table><tr><th>Employee</th><th>Training</th><th>Progress</th><th>Status</th><th>Due</th></tr>' +
-      data.training.map(x => '<tr><td><b>' + x[0] + '</b></td><td>' + x[1] + '</td><td><b>' + x[2] + '%</b><div class="bar"><i class="' + (x[2] < 70 ? "bad" : x[2] < 80 ? "warn" : "") + '" style="width:' + x[2] + '%"></i></div></td><td><span class="status ' + (x[3] === "Not Started" ? "bad" : x[3] === "In Progress" ? "warn" : "good") + '">' + x[3] + '</span></td><td>' + x[4] + '</td></tr>').join("") +
+      '<div class="table"><table><tr><th>Employee</th><th>Training</th><th>Progress %</th><th>Status</th><th>Due</th><th></th></tr>' +
+      data.training.map((x, i) => '<tr><td>' + cell("training", i, 0, "text", "Name") + '</td><td>' + cell("training", i, 1, "text", "Training") + '</td><td>' + cell("training", i, 2, "number") + '<div class="bar"><i class="' + (x[2] < 70 ? "bad" : x[2] < 80 ? "warn" : "") + '" style="width:' + Math.min(100, Number(x[2]) || 0) + '%"></i></div></td><td>' + cell("training", i, 3, "status") + '</td><td>' + cell("training", i, 4, "text", "e.g. 10/12") + '</td>' + deleteCell("training", i) + '</tr>').join("") +
       '</table></div></div>';
   }
 
@@ -178,15 +220,16 @@
     return top("Today’s Team Huddle", "Align. Motivate. Win the day.") +
       '<div class="card pad"><div class="huddle"><div class="label">TODAY’S FOCUS</div><h2>' + data.huddle[0] + '</h2><div class="sub">' + data.huddle[1] + '</div></div>' +
       '<div class="hgrid"><div class="hbox"><b>Team Challenge</b><strong>' + data.huddle[2] + '</strong></div><div class="hbox"><b>Recognition</b><strong>' + data.huddle[3] + '</strong></div></div></div>' +
-      '<div class="card pad" style="margin-top:15px"><div class="head"><h2>Today’s action items</h2></div><div class="action"><span class="check"></span>Review yesterday’s results</div><div class="action"><span class="check"></span>Share today’s focus</div><div class="action"><span class="check"></span>Ask for team commitments</div></div>';
+      '<div class="card pad" style="margin-top:15px"><div class="head"><h2>Today’s action items</h2></div>' +
+      (data.actions.length ? data.actions.map(action => '<div class="action"><span class="check"></span>' + esc(action) + '</div>').join("") : '<div class="notice">No action items yet. Add them from the Dashboard.</div>') + '</div>';
   }
 
   function settingsPage() {
     return top("Settings", "Set the rules once. Use them everywhere.") +
       '<div class="card pad"><div class="head"><h2>Manager & KPI goals</h2></div><div class="two">' +
-      '<div><label>Manager name</label><input id="manager-name" value="' + data.manager + '"></div>' +
-      '<div><label>Metric 1 title</label><input id="metric-title-0" value="' + data.metricTitles[0] + '"></div><div><label>Metric 2 title</label><input id="metric-title-1" value="' + data.metricTitles[1] + '"></div>' +
-      '<div><label>Metric 3 title</label><input id="metric-title-2" value="' + data.metricTitles[2] + '"></div><div><label>Metric 4 title</label><input id="metric-title-3" value="' + data.metricTitles[3] + '"></div>' +
+      '<div><label>Manager name</label><input id="manager-name" value="' + esc(data.manager) + '"></div>' +
+      '<div><label>Metric 1 title</label><input id="metric-title-0" value="' + esc(data.metricTitles[0]) + '"></div><div><label>Metric 2 title</label><input id="metric-title-1" value="' + esc(data.metricTitles[1]) + '"></div>' +
+      '<div><label>Metric 3 title</label><input id="metric-title-2" value="' + esc(data.metricTitles[2]) + '"></div><div><label>Metric 4 title</label><input id="metric-title-3" value="' + esc(data.metricTitles[3]) + '"></div>' +
       '<div><label>Sales goal</label><input id="sales-goal" type="number" value="' + data.salesGoal + '"></div>' +
       '<div><label>Conversion goal %</label><input id="conv-goal" type="number" value="' + data.convGoal + '"></div><div><label>Avg. transaction goal</label><input id="atv-goal" type="number" value="' + data.atvGoal + '"></div>' +
       '<div><label>CX goal %</label><input id="cx-goal" type="number" value="' + data.cxGoal + '"></div></div><button class="btn" id="save-settings" style="margin-top:15px">Save Settings</button></div>';
@@ -217,7 +260,23 @@
     window.location.hash = id;
   }
 
+  let rendering = false;
+
   function render() {
+    // Replacing the page blurs a focused input, which can fire "change" and re-enter render.
+    if (rendering) {
+      setTimeout(render);
+      return;
+    }
+    rendering = true;
+    try {
+      renderPage();
+    } finally {
+      rendering = false;
+    }
+  }
+
+  function renderPage() {
     const id = window.location.hash.slice(1) || "dashboard";
     const page = pages[id] ? id : "dashboard";
     const pagesEl = document.getElementById("pages");
@@ -258,7 +317,7 @@
     if (addTeam) addTeam.addEventListener("click", () => {
       const name = window.prompt("Team member name");
       if (name) {
-        data.team.push([name, "On Track", "Set focus area", 0]);
+        data.team.push([name, "On Track", "", 0]);
         saveData();
         render();
       }
@@ -268,7 +327,7 @@
     if (addCoaching) addCoaching.addEventListener("click", () => {
       const name = window.prompt("Employee name");
       if (name) {
-        data.coaching.push([name, "Focus area", "Next step", "Next week", "Follow Up"]);
+        data.coaching.push([name, "", "", "", "Follow Up"]);
         saveData();
         render();
       }
@@ -278,7 +337,7 @@
     if (addTraining) addTraining.addEventListener("click", () => {
       const name = window.prompt("Employee name");
       if (name) {
-        data.training.push([name, "New training", 0, "Not Started", "Set date"]);
+        data.training.push([name, "", 0, "Not Started", ""]);
         saveData();
         render();
       }
@@ -304,6 +363,28 @@
         data.actions.splice(Number(button.dataset.deleteAction), 1);
         saveData();
         render();
+      });
+    });
+
+    pagesEl.querySelectorAll("[data-table]").forEach(field => {
+      field.addEventListener("change", () => {
+        const row = data[field.dataset.table][Number(field.dataset.row)];
+        const isNumber = field.dataset.type === "number";
+        row[Number(field.dataset.col)] = isNumber ? Math.max(0, Math.min(100, Number(field.value) || 0)) : field.value;
+        saveData();
+        if (isNumber || field.tagName === "SELECT") render();
+      });
+    });
+
+    pagesEl.querySelectorAll("[data-delete-row]").forEach(button => {
+      button.addEventListener("click", () => {
+        const parts = button.dataset.deleteRow.split(":");
+        const row = data[parts[0]][Number(parts[1])];
+        if (window.confirm("Delete " + (row[0] || "this row") + "?")) {
+          data[parts[0]].splice(Number(parts[1]), 1);
+          saveData();
+          render();
+        }
       });
     });
 
