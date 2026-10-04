@@ -72,6 +72,14 @@
 
   const metricDefaults = ["Sales", "Conversion", "Avg. Sale", "Customer Experience"];
 
+  const COLOR_SCHEMES = {
+    sage: { name: "Sage & Forest", note: "Calm and natural", swatches: ["#f8f5ef", "#174f43", "#2f7a66", "#78a892"] },
+    navy: { name: "Navy & Brass", note: "Classic and professional", swatches: ["#f5f6f9", "#1f3a68", "#2c4f8a", "#3d6bb3"] },
+    plum: { name: "Plum & Blush", note: "Soft and boutique", swatches: ["#faf6f7", "#6b2d5c", "#8a3f78", "#a45d8f"] },
+    teal: { name: "Harbor Teal & Coral", note: "Fresh and bright", swatches: ["#f3f8f8", "#0b6e75", "#12838b", "#2a9d8f"] },
+    graphite: { name: "Graphite & Tangerine", note: "Bold and modern", swatches: ["#f4f4f2", "#1c1d21", "#2b2d33", "#c24a0b"] }
+  };
+
   const WIDGET_NAMES = {
     kpis: "Metric cards",
     salesChart: "Sales by day",
@@ -116,6 +124,7 @@
       manager: "Alex Manager",
       store: "",
       theme: "auto",
+      palette: "sage",
       welcomeDismissed: false,
       lastBackup: null,
       dashboard: defaultLayout(),
@@ -227,6 +236,7 @@
     saved.metricTitles = Array.isArray(saved.metricTitles) && saved.metricTitles.length === 4 ? saved.metricTitles.map(t => renames[t] || t) : metricDefaults.slice();
     if (typeof saved.store !== "string") saved.store = "";
     if (["auto", "light", "dark"].indexOf(saved.theme) < 0) saved.theme = "auto";
+    if (!COLOR_SCHEMES[saved.palette]) saved.palette = "sage";
     if (saved.welcomeDismissed === undefined) saved.welcomeDismissed = true;
     ["history", "goals", "notes", "teamHistory"].forEach(key => { if (!Array.isArray(saved[key])) saved[key] = []; });
     ["teamWeek", "reportNotes"].forEach(key => { if (!saved[key] || typeof saved[key] !== "object" || Array.isArray(saved[key])) saved[key] = {}; });
@@ -263,12 +273,26 @@
     return !String(n.notes || "").trim() && !String(n.commitments || "").trim() && !n.followUp;
   }
 
+  // Saved data that can't be read is kept (never silently replaced) so it can still be recovered.
+  let unreadableData = null;
+
   function loadData() {
+    let raw = null;
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+      raw = localStorage.getItem(STORAGE_KEY);
+    } catch (e) {}
+    if (!raw) return makeSample();
+    try {
+      const saved = JSON.parse(raw);
       if (isValidData(saved)) return normalize(saved);
     } catch (e) {}
-    return makeSample();
+    unreadableData = raw;
+    try {
+      localStorage.setItem(STORAGE_KEY + "-unreadable-" + Date.now(), raw);
+    } catch (e) {}
+    const fresh = makeSample();
+    fresh.welcomeDismissed = true;
+    return fresh;
   }
 
   // Private Browsing (or storage turned off) means nothing can be saved; the page warns about it.
@@ -439,6 +463,7 @@
         if (!isValidData(restored)) throw new Error("invalid");
         if (!window.confirm("Replace everything in this tracker with the backup from " + (parsed.exportedAt ? new Date(parsed.exportedAt).toLocaleDateString() : "this file") + "?")) return;
         data = normalize(restored);
+        unreadableData = null;
         data.welcomeDismissed = true;
         rollWeek();
         saveData();
@@ -1184,8 +1209,13 @@
       field("Metric 3 name (dollars)", "metric-title-2", t[2]) + field(esc(t[2]) + " goal ($)", "atv-goal", data.atvGoal, "number") +
       field("Metric 4 name (percent)", "metric-title-3", t[3]) + field(esc(t[3]) + " goal (%)", "cx-goal", data.cxGoal, "number") +
       '</div><button class="btn" id="save-settings">Save Settings</button></div>' +
-      '<div class="card pad mt"><div class="head"><div><h2>Appearance</h2><p>“Automatic” matches your device’s light or dark setting.</p></div></div>' +
-      '<div class="btn-row">' + [["auto", "Automatic"], ["light", "Light"], ["dark", "Dark"]].map(o => '<button type="button" class="btn ' + (data.theme === o[0] ? "" : "alt") + '" data-theme-choice="' + o[0] + '">' + o[1] + '</button>').join("") + '</div></div>' +
+      '<div class="card pad mt"><div class="head"><div><h2>Appearance</h2><p>Pick a colour scheme. Each one has a light and a dark version.</p></div></div>' +
+      '<div class="scheme-grid" role="radiogroup" aria-label="Colour scheme">' + Object.keys(COLOR_SCHEMES).map(id => {
+        const c = COLOR_SCHEMES[id];
+        const on = (data.palette || "sage") === id;
+        return '<button type="button" class="scheme" role="radio" aria-checked="' + on + '" data-palette-choice="' + id + '"><span class="scheme-sw">' + c.swatches.map(col => '<i style="background:' + col + '"></i>').join("") + '</span><span><b>' + c.name + '</b><small>' + c.note + '</small></span>' + (on ? '<span class="scheme-check" aria-hidden="true">✓</span>' : "") + '</button>';
+      }).join("") + '</div>' +
+      '<div class="field" style="margin:16px 0 6px"><label>Light or dark</label></div><div class="btn-row">' + [["auto", "Automatic"], ["light", "Light"], ["dark", "Dark"]].map(o => '<button type="button" class="btn ' + (data.theme === o[0] ? "" : "alt") + '" data-theme-choice="' + o[0] + '">' + o[1] + '</button>').join("") + '</div><p class="hint">Automatic follows your device’s light or dark setting.</p></div>' +
       '<div class="card pad mt"><div class="head"><div><h2>Today’s huddle</h2><p>Shown on the Dashboard and the Huddle tab. Changes save automatically.</p></div></div><div class="two">' +
       ["Focus headline", "Focus details", "Team challenge", "Recognition"].map((label, i) => field(label, "huddle-" + i, data.huddle[i])).join("") +
       '</div><button class="btn" id="save-huddle">Save Huddle</button></div>' +
@@ -1237,6 +1267,9 @@
   function applyTheme() {
     if (data.theme === "light" || data.theme === "dark") document.documentElement.setAttribute("data-theme", data.theme);
     else document.documentElement.removeAttribute("data-theme");
+    // Sage & Forest is the stylesheet's default; other schemes swap the colour tokens.
+    if (data.palette && data.palette !== "sage") document.documentElement.setAttribute("data-palette", data.palette);
+    else document.documentElement.removeAttribute("data-palette");
   }
 
   let rendering = false;
@@ -1275,7 +1308,8 @@
 
     applyTheme();
     hideTip();
-    const warning = storageOk ? "" : '<div class="notice storage-warning" role="alert"><b>Changes aren’t being saved.</b> This browser isn’t letting the tracker save (Private Browsing or website data turned off). Anything you enter will be lost when you close this tab — open the tracker in a normal window, or download a backup from Settings before closing.</div>';
+    const recovery = unreadableData ? '<div class="notice storage-warning" role="alert"><b>Your saved data couldn’t be opened,</b> so the tracker is showing sample data. A copy of your data has been kept. Restore your latest backup in Settings, or download the copy and send it to the seller for help. <button type="button" class="btn alt small" id="download-unreadable">Download Copy</button></div>' : "";
+    const warning = recovery + (storageOk ? "" : '<div class="notice storage-warning" role="alert"><b>Changes aren’t being saved.</b> This browser isn’t letting the tracker save (Private Browsing or website data turned off). Anything you enter will be lost when you close this tab — open the tracker in a normal window, or download a backup from Settings before closing.</div>');
     pagesEl.innerHTML = '<section class="page active page-' + page + '">' + warning + (isMember ? memberPage(memberIndexFromRoute(parts.slice(1).join("/"))) : pages[page]()) + '</section>';
     navEl.innerHTML = Object.keys(labels).map(key =>
       '<button class="nav ' + (key === page ? "active" : "") + '" data-nav="' + key + '">' + labels[key] + '</button>'
@@ -1314,7 +1348,7 @@
   function startFresh() {
     if (!window.confirm("Start fresh? This clears your team, coaching, 1:1 notes, training, goals, schedule and results. Your name, store, metrics, goals and theme are kept.")) return;
     const fresh = blankData();
-    ["salesGoal", "convGoal", "atvGoal", "cxGoal", "metricTitles", "manager", "store", "lastBackup", "theme", "dashboard"].forEach(key => { fresh[key] = data[key]; });
+    ["salesGoal", "convGoal", "atvGoal", "cxGoal", "metricTitles", "manager", "store", "lastBackup", "theme", "palette", "dashboard"].forEach(key => { fresh[key] = data[key]; });
     fresh.weekStart = mondayIso(0);
     fresh.scheduleWeek = mondayIso(0);
     if (fresh.manager === "Alex Manager") fresh.manager = "";
@@ -1336,6 +1370,15 @@
 
     pagesEl.querySelectorAll("[data-target]").forEach(button => {
       button.addEventListener("click", () => go(button.dataset.target));
+    });
+
+    pagesEl.querySelectorAll("[data-palette-choice]").forEach(button => {
+      button.addEventListener("click", () => {
+        data.palette = button.dataset.paletteChoice;
+        saveData();
+        render();
+        toast(COLOR_SCHEMES[data.palette].name + " colour scheme on.");
+      });
     });
 
     pagesEl.querySelectorAll("[data-theme-choice]").forEach(button => {
@@ -1575,10 +1618,12 @@
     bind("load-sample", () => {
       if (!window.confirm("Replace everything with the sample data? Download a backup first if you want to keep your current data.")) return;
       const theme = data.theme;
+      const palette = data.palette;
       const layout = data.dashboard;
       data = makeSample();
       data.welcomeDismissed = true;
       data.theme = theme;
+      data.palette = palette;
       data.dashboard = layout;
       saveData();
       go("dashboard");
@@ -1590,6 +1635,7 @@
       restoreInput.value = "";
     });
 
+    bind("download-unreadable", () => downloadFile("manager-tracker-saved-data-" + todayIso() + ".json", unreadableData, "application/json"));
     bind("print-page", () => {
       if (comments) {
         data.reportNotes[reportData().key] = comments.value;
