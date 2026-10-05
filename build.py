@@ -25,7 +25,8 @@ files = {
     FOLDER + "/START HERE - Quick Start Guide.html": (ROOT / "product" / "quick-start-guide.html").read_text(encoding="utf-8"),
     FOLDER + "/License.txt": (ROOT / "product" / "LICENSE.txt").read_text(encoding="utf-8"),
 }
-out = DIST / "Manager-Performance-Tracker.zip"
+VERSION = re.search(r'APP_VERSION = "([^"]+)"', app).group(1)
+out = DIST / ("Manager-Performance-Tracker-v" + VERSION + ".zip")
 with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
     for name, content in files.items():
         z.writestr(name, content)

@@ -2,6 +2,7 @@
   "use strict";
 
   const STORAGE_KEY = "manager-performance-v2";
+  const APP_VERSION = "1.0";
   const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const DAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   // First day of the week: 1 Monday (default), 0 Sunday or 6 Saturday. Day columns and schedules count from it.
@@ -1290,7 +1291,8 @@
       '<div class="notice" style="margin:0 0 14px">Last backup: <b>' + (data.lastBackup ? new Date(data.lastBackup).toLocaleString() : "never") + '</b></div>' +
       '<div class="btn-row"><button type="button" class="btn" id="download-backup">Download Backup</button><label class="btn alt file-btn">Restore Backup<input type="file" id="restore-backup" accept=".json,application/json"></label>' +
       '</div><div class="export-row"><label for="export-what">Download a spreadsheet (opens in Excel, Numbers or Google Sheets)</label><div class="btn-row"><select id="export-what" style="width:auto"><option value="all">Everything</option>' + Object.keys(EXPORTS).map(k => '<option value="' + k + '">' + EXPORTS[k] + '</option>').join("") + '</select><button type="button" class="btn alt" id="export-csv">Download Spreadsheet</button></div></div>' +
-      '<div class="btn-row" style="margin-top:12px"><button type="button" class="btn alt" id="load-sample">Load Sample Data</button><button type="button" class="btn danger" id="start-fresh">Start Fresh</button></div></div>';
+      '<div class="btn-row" style="margin-top:12px"><button type="button" class="btn alt" id="load-sample">Load Sample Data</button><button type="button" class="btn danger" id="start-fresh">Start Fresh</button></div></div>' +
+      '<p class="hint" style="text-align:center;margin-top:18px">Manager Performance Tracker · Version ' + APP_VERSION + '</p>';
   }
 
   /* ---------- Navigation & rendering ---------- */

@@ -22,3 +22,5 @@ sent to the seller or anywhere else. You are responsible for downloading
 backups (Settings > Your data > Download Backup).
 
 This product is provided "as is", without warranty of any kind.
+
+Manager Performance Tracker - Version 1.0
