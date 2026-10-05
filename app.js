@@ -1813,6 +1813,37 @@
   document.addEventListener("focusout", hideTip);
   window.addEventListener("scroll", hideTip, true);
 
+  // A tracker left open overnight moves to the new week on Monday by itself.
+  function checkNewWeek() {
+    if (data.weekStart !== mondayIso(0) || data.scheduleWeek !== mondayIso(0)) render();
+  }
+  setInterval(checkNewWeek, 60000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkNewWeek();
+  });
+
+  // The tracker open in another tab saved a change: pick it up so this tab never saves over it.
+  // If a field here is being typed in, the redraw waits until that field is finished.
+  let externalRedraw = false;
+  window.addEventListener("storage", e => {
+    if (e.key !== STORAGE_KEY || !e.newValue) return;
+    try {
+      const saved = JSON.parse(e.newValue);
+      if (!isValidData(saved)) return;
+      data = normalize(saved);
+    } catch (err) {
+      return;
+    }
+    const active = document.activeElement;
+    if (active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) && document.getElementById("pages").contains(active)) externalRedraw = true;
+    else render();
+  });
+  document.addEventListener("focusout", () => {
+    if (!externalRedraw) return;
+    externalRedraw = false;
+    setTimeout(render);
+  });
+
   window.addEventListener("hashchange", render);
   window.addEventListener("DOMContentLoaded", render);
   render();
