@@ -2,7 +2,23 @@
   "use strict";
 
   const STORAGE_KEY = "manager-performance-v2";
-  const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const DAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  // First day of the week: 1 Monday (default), 0 Sunday or 6 Saturday. Day columns and schedules count from it.
+  let weekStartDay = 1;
+
+  function weekdays() {
+    return DAY_SHORT.slice(weekStartDay).concat(DAY_SHORT.slice(0, weekStartDay));
+  }
+
+  function weekdaysLong() {
+    return DAY_LONG.slice(weekStartDay).concat(DAY_LONG.slice(0, weekStartDay));
+  }
+
+  // Moves a week of shifts from one first-day to another, so each shift stays on the same weekday.
+  function rotateWeek(arr, fromStart, toStart) {
+    return arr.map((_, j) => arr[(((toStart + j) % 7) - fromStart + 7) % 7]);
+  }
 
   /* ---------- Dates ---------- */
 
@@ -21,10 +37,10 @@
   }
 
   function todayIndex() {
-    return (new Date().getDay() + 6) % 7;
+    return (new Date().getDay() - weekStartDay + 7) % 7;
   }
 
-  function mondayIso(offsetWeeks) {
+  function weekStartIso(offsetWeeks) {
     const t = new Date();
     return isoDate(new Date(t.getFullYear(), t.getMonth(), t.getDate() - todayIndex() + 7 * (offsetWeeks || 0)));
   }
@@ -42,7 +58,7 @@
   }
 
   function emptyWeek() {
-    return WEEKDAYS.map(() => ({ sales: 0, conv: 0, atv: 0, cx: 0 }));
+    return weekdays().map(() => ({ sales: 0, conv: 0, atv: 0, cx: 0 }));
   }
 
   function weekLabel(offsetWeeks) {
@@ -71,6 +87,29 @@
   /* ---------- Data ---------- */
 
   const metricDefaults = ["Sales", "Conversion", "Avg. Sale", "Customer Experience"];
+
+  const CURRENCIES = {
+    USD: "US dollar",
+    CAD: "Canadian dollar",
+    GBP: "British pound",
+    EUR: "Euro",
+    AUD: "Australian dollar",
+    NZD: "New Zealand dollar",
+    ZAR: "South African rand",
+    INR: "Indian rupee",
+    MXN: "Mexican peso",
+    PHP: "Philippine peso",
+    SGD: "Singapore dollar"
+  };
+
+  // A new tracker starts in the currency of the device's region.
+  function guessCurrency() {
+    const region = String((navigator.languages && navigator.languages[0]) || navigator.language || "").split("-")[1] || "";
+    const byRegion = { CA: "CAD", GB: "GBP", UK: "GBP", AU: "AUD", NZ: "NZD", ZA: "ZAR", IN: "INR", MX: "MXN", PH: "PHP", SG: "SGD" };
+    const euro = ["IE", "DE", "FR", "ES", "IT", "NL", "BE", "AT", "PT", "FI", "GR", "LU", "SK", "SI", "EE", "LV", "LT", "MT", "CY", "HR"];
+    const r = region.toUpperCase();
+    return byRegion[r] || (euro.indexOf(r) >= 0 ? "EUR" : "USD");
+  }
 
   const COLOR_SCHEMES = {
     sage: { name: "Sage & Forest", note: "Calm and natural", swatches: ["#f8f5ef", "#174f43", "#2f7a66", "#78a892"] },
@@ -125,6 +164,8 @@
       store: "",
       theme: "auto",
       palette: "sage",
+      currency: guessCurrency(),
+      weekStartDay: weekStartDay,
       welcomeDismissed: false,
       lastBackup: null,
       dashboard: defaultLayout(),
@@ -133,29 +174,29 @@
       atvGoal: 85,
       cxGoal: 90,
       metricTitles: metricDefaults.slice(),
-      weekStart: mondayIso(0),
-      scheduleWeek: mondayIso(0),
+      weekStart: weekStartIso(0),
+      scheduleWeek: weekStartIso(0),
       scheduleCopied: false,
       // Sample results fill this week up to today.
       days: [[7200, 18, 89, 92], [6800, 17, 84, 90], [7600, 18, 90, 94], [7900, 19, 86, 91], [8400, 20, 88, 93], [9800, 21, 91, 95], [8800, 19, 87, 92]]
         .map((v, i) => i <= todayIndex() ? { sales: v[0], conv: v[1], atv: v[2], cx: v[3] } : { sales: 0, conv: 0, atv: 0, cx: 0 }),
       history: [
-        { start: mondayIso(-4), label: weekLabel(-4), sales: 46200, days: 7, conv: 17.1, atv: 83, cx: 89 },
-        { start: mondayIso(-3), label: weekLabel(-3), sales: 48900, days: 7, conv: 18.0, atv: 86, cx: 91 },
-        { start: mondayIso(-2), label: weekLabel(-2), sales: 51200, days: 7, conv: 19.2, atv: 88, cx: 93 },
-        { start: mondayIso(-1), label: weekLabel(-1), sales: 47800, days: 7, conv: 18.4, atv: 85, cx: 90 }
+        { start: weekStartIso(-4), label: weekLabel(-4), sales: 46200, days: 7, conv: 17.1, atv: 83, cx: 89 },
+        { start: weekStartIso(-3), label: weekLabel(-3), sales: 48900, days: 7, conv: 18.0, atv: 86, cx: 91 },
+        { start: weekStartIso(-2), label: weekLabel(-2), sales: 51200, days: 7, conv: 19.2, atv: 88, cx: 93 },
+        { start: weekStartIso(-1), label: weekLabel(-1), sales: 47800, days: 7, conv: 18.4, atv: 85, cx: 90 }
       ],
       team: [
-        ["Alex Johnson", "On Track", "Customer Engagement", 85, ["9-5", "9-5", "Off", "Off", "12-8", "10-6", "10-6"], 12000],
-        ["Mike Carter", "Needs Coaching", "Sales Process", 62, ["Off", "12-8", "12-8", "9-5", "9-5", "Off", "11-7"], 9000],
-        ["Sarah Lee", "On Track", "Product Knowledge", 95, ["10-6", "10-6", "10-6", "Off", "Off", "9-5", "12-6"], 11000],
-        ["Tom Davis", "On Track", "Customer Experience", 78, ["12-8", "Off", "9-5", "9-5", "10-6", "12-8", "Off"], 10000],
-        ["Lisa Brown", "Needs Training", "Conversion", 68, ["Off", "9-3", "Off", "12-8", "12-8", "9-5", "10-4"], 8000]
+        ["Alex Johnson", "On Track", "Customer Engagement", 85, rotateWeek(["9-5", "9-5", "Off", "Off", "12-8", "10-6", "10-6"], 1, weekStartDay), 12000],
+        ["Mike Carter", "Needs Coaching", "Sales Process", 62, rotateWeek(["Off", "12-8", "12-8", "9-5", "9-5", "Off", "11-7"], 1, weekStartDay), 9000],
+        ["Sarah Lee", "On Track", "Product Knowledge", 95, rotateWeek(["10-6", "10-6", "10-6", "Off", "Off", "9-5", "12-6"], 1, weekStartDay), 11000],
+        ["Tom Davis", "On Track", "Customer Experience", 78, rotateWeek(["12-8", "Off", "9-5", "9-5", "10-6", "12-8", "Off"], 1, weekStartDay), 10000],
+        ["Lisa Brown", "Needs Training", "Conversion", 68, rotateWeek(["Off", "9-3", "Off", "12-8", "12-8", "9-5", "10-4"], 1, weekStartDay), 8000]
       ],
       teamWeek: sampleTeamWeek((todayIndex() + 1) / 7),
       teamHistory: [
-        { start: mondayIso(-2), label: weekLabel(-2), entries: sampleTeamWeek(1.04, true) },
-        { start: mondayIso(-1), label: weekLabel(-1), entries: sampleTeamWeek(0.97, true) }
+        { start: weekStartIso(-2), label: weekLabel(-2), entries: sampleTeamWeek(1.04, true) },
+        { start: weekStartIso(-1), label: weekLabel(-1), entries: sampleTeamWeek(0.97, true) }
       ],
       reportNotes: {},
       coaching: [
@@ -232,6 +273,10 @@
 
   // Brings data saved by older versions (and backups) up to the current shape.
   function normalize(saved) {
+    weekStartDay = [0, 1, 6].indexOf(saved.weekStartDay) >= 0 ? saved.weekStartDay : 1;
+    saved.weekStartDay = weekStartDay;
+    // People who used the tracker before the currency setting existed keep dollars.
+    if (!CURRENCIES[saved.currency]) saved.currency = "USD";
     const renames = { "Need Coaching": "Needs Coaching", "Need Training": "Needs Training", "Avg. Transaction": "Avg. Sale" };
     saved.metricTitles = Array.isArray(saved.metricTitles) && saved.metricTitles.length === 4 ? saved.metricTitles.map(t => renames[t] || t) : metricDefaults.slice();
     if (typeof saved.store !== "string") saved.store = "";
@@ -248,7 +293,7 @@
       while (row[4].length < 7) row[4].push("");
       row[5] = Math.max(0, Number(row[5]) || 0);
     });
-    // Results used to be a free list of rows; now there is one row per day, Monday to Sunday.
+    // Results used to be a free list of rows; now there is one row per day of the week.
     if (!saved.weekStart) {
       const rows = saved.days.map(d => ({ sales: Number(d.sales) || 0, conv: Number(d.conv) || 0, atv: Number(d.atv) || 0, cx: Number(d.cx) || 0 }));
       if (rows.length > 7) {
@@ -259,9 +304,9 @@
       } else {
         saved.days = rows.concat(emptyWeek()).slice(0, 7);
       }
-      saved.weekStart = mondayIso(0);
+      saved.weekStart = weekStartIso(0);
     }
-    if (!saved.scheduleWeek) saved.scheduleWeek = mondayIso(0);
+    if (!saved.scheduleWeek) saved.scheduleWeek = weekStartIso(0);
     saved.scheduleCopied = !!saved.scheduleCopied;
     saved.notes = saved.notes.filter(n => !isEmptyNote(n));
     saved.coaching.forEach(row => { row[3] = toIso(row[3]); });
@@ -343,9 +388,9 @@
     toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
   }
 
-  // Every Monday: last week's results move to the trend, and the schedule carries over for review.
+  // At the start of each week: last week's results move to the trend, and the schedule carries over for review.
   function rollWeek() {
-    const current = mondayIso(0);
+    const current = weekStartIso(0);
     let changed = false;
     if (data.weekStart !== current) {
       const week = weekTotals();
@@ -494,7 +539,7 @@
   function exportRows(kind) {
     const t = data.metricTitles;
     const round = n => Math.round(n * 100) / 100;
-    if (kind === "daily") return [["Date", "Day", t[0], t[1] + " (%)", t[2], t[3] + " (%)"]].concat(data.days.map((d, i) => [addDays(data.weekStart, i), WEEKDAYS[i], d.sales, d.conv, d.atv, d.cx]));
+    if (kind === "daily") return [["Date", "Day", t[0], t[1] + " (%)", t[2], t[3] + " (%)"]].concat(data.days.map((d, i) => [addDays(data.weekStart, i), weekdays()[i], d.sales, d.conv, d.atv, d.cx]));
     if (kind === "weeks") {
       const w = weekTotals();
       return [["Week", t[0], "Days entered", t[1] + " (%)", t[2], t[3] + " (%)"]].concat(data.history.map(h => [h.label, h.sales, h.days, h.conv, h.atv, h.cx]), [[weekLabelFrom(data.weekStart) + " (this week so far)", w.sales, w.days, round(w.conv), round(w.atv), round(w.cx)]]);
@@ -514,7 +559,7 @@
     if (kind === "training") return [["Team member", "Training", "Status", "Due"]].concat(data.training.map(r => [r[0], r[1], trainingOverdue(r) ? r[3] + " (overdue)" : r[3], r[4]]));
     if (kind === "goals") return [["Owner", "Goal", "Current", "Target", "% complete", "Due"]].concat(data.goals.map(g => [g.name, g.goal, g.current, g.target, Number(g.target) ? round(g.current / g.target * 100) : 0, g.due]));
     if (kind === "notes") return [["Date", "Team member", "What we talked about", "Commitments & next steps", "Follow up on"]].concat(data.notes.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map(n => [n.date, n.name, n.notes, n.commitments, n.followUp]));
-    if (kind === "schedule") return [["Team member"].concat(WEEKDAYS.map((d, i) => d + " " + addDays(data.weekStart, i)), ["Hours"])].concat(data.team.map(m => [m[0]].concat(m[4], [memberHours(m)])));
+    if (kind === "schedule") return [["Team member"].concat(weekdays().map((d, i) => d + " " + addDays(data.weekStart, i)), ["Hours"])].concat(data.team.map(m => [m[0]].concat(m[4], [memberHours(m)])));
     return [];
   }
 
@@ -532,8 +577,28 @@
     return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
+  // Amounts use the chosen currency, written the way this device writes numbers (e.g. $7,200 or 7.200 €).
+  const moneyFormats = {};
+
+  function moneyFormat() {
+    const code = CURRENCIES[data.currency] ? data.currency : "USD";
+    if (!moneyFormats[code]) {
+      try {
+        moneyFormats[code] = new Intl.NumberFormat(undefined, { style: "currency", currency: code, minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      } catch (e) {
+        moneyFormats[code] = new Intl.NumberFormat("en-US", { style: "currency", currency: code, minimumFractionDigits: 0, maximumFractionDigits: 0 });
+      }
+    }
+    return moneyFormats[code];
+  }
+
+  function currencySymbol() {
+    const part = moneyFormat().formatToParts(0).find(x => x.type === "currency");
+    return part ? part.value : "$";
+  }
+
   function money(value) {
-    return "$" + Math.round(Number(value) || 0).toLocaleString();
+    return moneyFormat().format(Math.round(Number(value) || 0));
   }
 
   function daysSince(iso) {
@@ -731,14 +796,14 @@
   }
 
   function kpi(index, value, goal, type, previous) {
-    const fmt = v => type === "money" ? money(v) : type === "atv" ? "$" + Number(v).toFixed(0) : Number(v).toFixed(1) + "%";
+    const fmt = v => type === "money" ? money(v) : type === "atv" ? money(Number(v)) : Number(v).toFixed(1) + "%";
     const percent = goal ? Math.min(100, (value / goal) * 100) : 0;
     const tone = statusClass(value, goal);
     let delta = "";
     if (previous && previous.value) {
       const diff = previous.compare - previous.value;
       const up = diff >= 0;
-      const amount = type === "money" ? Math.abs(diff / previous.value * 100).toFixed(0) + "% daily avg" : type === "atv" ? "$" + Math.abs(diff).toFixed(0) : Math.abs(diff).toFixed(1) + " pts";
+      const amount = type === "money" ? Math.abs(diff / previous.value * 100).toFixed(0) + "% daily avg" : type === "atv" ? money(Math.abs(diff)) : Math.abs(diff).toFixed(1) + " pts";
       delta = '<div class="delta ' + (Math.abs(diff) < 0.05 ? "" : up ? "up" : "down") + '">' + (up ? "▲ " : "▼ ") + amount + ' vs last week</div>';
     }
     return '<button type="button" class="card pad kpi kpi-link" data-target="daily"><b>' + esc(data.metricTitles[index]) + '</b><div class="metric">' + fmt(value) + '</div><div class="goal">Goal: ' + fmt(goal) + '</div>' +
@@ -770,7 +835,7 @@
     const lastActive = data.days.reduce((acc, d, i) => Number(d.sales) ? i : acc, -1);
     const salesChart = '<div class="card pad"><div class="head"><div><h2>' + esc(data.metricTitles[0]) + ' by day</h2><p>Each day compared with your daily goal (weekly goal ÷ 7).</p></div><button type="button" class="btn alt small" data-target="daily">Enter results</button></div>' +
       barChart(data.days.map((d, i) => {
-        const label = WEEKDAYS[i] || "Day " + (i + 1);
+        const label = weekdays()[i] || "Day " + (i + 1);
         return { label: label, value: Number(d.sales) || 0, showValue: i === lastActive ? money(d.sales) : "", tip: label + ": " + money(d.sales) + " · " + Math.round((Number(d.sales) || 0) / dailyGoal * 100) + "% of daily goal" };
       }), dailyGoal, "Daily goal " + money(dailyGoal)) + '</div>';
 
@@ -790,7 +855,7 @@
         attention.slice(0, 4).map((item, i) => '<button type="button" class="attn attention-link" data-target="' + item[2] + '"><span class="num ' + (i ? "amber" : "") + '">' + (i + 1) + '</span><div><b>' + esc(item[0]) + '</b><small>' + item[1] + '</small></div><span aria-hidden="true">›</span></button>').join("") +
         '</div>',
       focus: () => '<div class="card pad focus"><div class="label">TODAY’S FOCUS</div><h2>' + esc(data.huddle[0]) + '</h2><div class="sub">' + esc(data.huddle[1]) + '</div></div>',
-      working: () => '<div class="card pad"><div class="head"><div><h2>Working today</h2><p>' + ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][todayIndex()] + ' · ' + working.length + (working.length === 1 ? " person" : " people") + (data.scheduleCopied ? " · carried over from last week" : "") + '</p></div><button type="button" class="btn alt small" data-target="schedule">Schedule</button></div>' +
+      working: () => '<div class="card pad"><div class="head"><div><h2>Working today</h2><p>' + weekdaysLong()[todayIndex()] + ' · ' + working.length + (working.length === 1 ? " person" : " people") + (data.scheduleCopied ? " · carried over from last week" : "") + '</p></div><button type="button" class="btn alt small" data-target="schedule">Schedule</button></div>' +
         (working.length ? working.map(m => '<div class="list-row">' + personLink(m[0]) + '<span class="status neutral">' + esc(m[4][todayIndex()]) + '</span></div>').join("") : '<div class="empty">No one is scheduled today. Add shifts on the Schedule tab.</div>') +
         '</div>',
       team: () => '<div class="card pad"><div class="head"><div><h2>Team at a glance</h2><p>' + data.team.length + (data.team.length === 1 ? " team member" : " team members") + ' · tap a name for their profile</p></div></div><div class="mini">' +
@@ -845,16 +910,16 @@
     const t = data.metricTitles;
     const tIdx = todayIndex();
     return top("Daily Results", "Enter each day’s numbers. Your Dashboard updates instantly.") +
-      '<div class="card pad"><div class="head"><div><h2>' + weekLabelFrom(data.weekStart) + '</h2><p>A new week starts automatically every Monday, and this week’s totals move to the trend below. Blank days don’t count toward averages.</p></div></div>' +
-      '<div class="table"><table class="fit day-table"><thead><tr><th>Day</th><th>' + esc(t[0]) + ' ($)</th><th>' + esc(t[1]) + ' (%)</th><th>' + esc(t[2]) + ' ($)</th><th>' + esc(t[3]) + ' (%)</th><th></th></tr></thead><tbody>' +
-      data.days.map((day, i) => '<tr class="' + (i === tIdx ? "today-col" : i > tIdx ? "future" : "") + '"><td><b>' + WEEKDAYS[i] + '</b> <span class="date">' + shortDate(addDays(data.weekStart, i)) + '</span>' + (i === tIdx ? ' <span class="status neutral">Today</span>' : "") + '</td>' +
-        ["sales", "conv", "atv", "cx"].map(f => '<td><input class="cell-input" data-day="' + i + '" data-field="' + f + '" type="number" inputmode="decimal" step="' + (f === "sales" ? "1" : ".1") + '" value="' + (Number(day[f]) || "") + '" placeholder="0" aria-label="' + WEEKDAYS[i] + ' ' + esc(t[["sales", "conv", "atv", "cx"].indexOf(f)]) + '"></td>').join("") +
-        '<td>' + (Number(day.sales) || Number(day.conv) || Number(day.atv) || Number(day.cx) ? '<button type="button" class="action-delete" title="Clear this day" aria-label="Clear ' + WEEKDAYS[i] + '" data-clear-day="' + i + '">×</button>' : "") + '</td></tr>').join("") +
-      '</tbody><tfoot><tr><td>Week</td><td>' + money(week.sales) + ' total</td><td>' + week.conv.toFixed(1) + '% avg</td><td>$' + week.atv.toFixed(0) + ' avg</td><td>' + week.cx.toFixed(1) + '% avg</td><td></td></tr></tfoot></table></div></div>' +
-      '<div class="card pad mt"><div class="head"><div><h2>Weekly ' + esc(t[0].toLowerCase()) + ' trend</h2><p>Each finished week is saved here automatically on Monday. Tap a week’s name to rename it.</p></div></div>' +
+      '<div class="card pad"><div class="head"><div><h2>' + weekLabelFrom(data.weekStart) + '</h2><p>A new week starts automatically every ' + DAY_LONG[weekStartDay] + ', and this week’s totals move to the trend below. Blank days don’t count toward averages.</p></div></div>' +
+      '<div class="table"><table class="fit day-table"><thead><tr><th>Day</th><th>' + esc(t[0]) + ' (' + currencySymbol() + ')</th><th>' + esc(t[1]) + ' (%)</th><th>' + esc(t[2]) + ' (' + currencySymbol() + ')</th><th>' + esc(t[3]) + ' (%)</th><th></th></tr></thead><tbody>' +
+      data.days.map((day, i) => '<tr class="' + (i === tIdx ? "today-col" : i > tIdx ? "future" : "") + '"><td><b>' + weekdays()[i] + '</b> <span class="date">' + shortDate(addDays(data.weekStart, i)) + '</span>' + (i === tIdx ? ' <span class="status neutral">Today</span>' : "") + '</td>' +
+        ["sales", "conv", "atv", "cx"].map(f => '<td><input class="cell-input" data-day="' + i + '" data-field="' + f + '" type="number" inputmode="decimal" step="' + (f === "sales" ? "1" : ".1") + '" value="' + (Number(day[f]) || "") + '" placeholder="0" aria-label="' + weekdays()[i] + ' ' + esc(t[["sales", "conv", "atv", "cx"].indexOf(f)]) + '"></td>').join("") +
+        '<td>' + (Number(day.sales) || Number(day.conv) || Number(day.atv) || Number(day.cx) ? '<button type="button" class="action-delete" title="Clear this day" aria-label="Clear ' + weekdays()[i] + '" data-clear-day="' + i + '">×</button>' : "") + '</td></tr>').join("") +
+      '</tbody><tfoot><tr><td>Week</td><td>' + money(week.sales) + ' total</td><td>' + week.conv.toFixed(1) + '% avg</td><td>' + money(week.atv) + ' avg</td><td>' + week.cx.toFixed(1) + '% avg</td><td></td></tr></tfoot></table></div></div>' +
+      '<div class="card pad mt"><div class="head"><div><h2>Weekly ' + esc(t[0].toLowerCase()) + ' trend</h2><p>Each finished week is saved here automatically on ' + DAY_LONG[weekStartDay] + '. Tap a week’s name to rename it.</p></div></div>' +
       barChart(items, data.salesGoal, "Weekly goal " + money(data.salesGoal)) +
       (data.history.length ? '<div class="table mt"><table class="fit week-table"><thead><tr><th>Week</th><th>' + esc(t[0]) + '</th><th>' + esc(t[1]) + '</th><th>' + esc(t[2]) + '</th><th>' + esc(t[3]) + '</th><th></th></tr></thead><tbody>' +
-        data.history.map((h, i) => ({ h: h, i: i })).reverse().map(r => '<tr><td><button type="button" class="link week-name" data-rename-week="' + r.i + '" aria-label="Rename week ' + esc(r.h.label) + '"><b>' + esc(r.h.label || "Unnamed week") + '</b></button></td><td>' + money(r.h.sales) + '</td><td>' + Number(r.h.conv).toFixed(1) + '%</td><td>$' + Number(r.h.atv).toFixed(0) + '</td><td>' + Number(r.h.cx).toFixed(1) + '%</td>' + deleteCell("history", r.i) + '</tr>').join("") +
+        data.history.map((h, i) => ({ h: h, i: i })).reverse().map(r => '<tr><td><button type="button" class="link week-name" data-rename-week="' + r.i + '" aria-label="Rename week ' + esc(r.h.label) + '"><b>' + esc(r.h.label || "Unnamed week") + '</b></button></td><td>' + money(r.h.sales) + '</td><td>' + Number(r.h.conv).toFixed(1) + '%</td><td>' + money(Number(r.h.atv)) + '</td><td>' + Number(r.h.cx).toFixed(1) + '%</td>' + deleteCell("history", r.i) + '</tr>').join("") +
         '</tbody></table></div>' : '<div class="notice">No finished weeks yet.</div>') +
       '</div>';
   }
@@ -879,18 +944,18 @@
       '<div class="grid4">' +
       tile("Team sales", money(totals.sales), totals.target ? Math.round(totals.pct) + "% of " + money(totals.target) + " in targets" : "Set targets below") +
       tile("On pace", withTarget.length ? onPace + "/" + withTarget.length : "—", "Keeping up with their target so far this week") +
-      tile("Avg sale", totals.trans ? "$" + totals.avgSale.toFixed(0) : "—", "Team sales ÷ transactions") +
+      tile("Avg sale", totals.trans ? money(totals.avgSale) : "—", "Team sales ÷ transactions") +
       tile("Items per sale", totals.trans ? totals.perSale.toFixed(1) : "—", "Team items ÷ transactions") +
       '</div>' +
-      '<div class="card pad mt"><div class="head"><div><h2>' + weekLabelFrom(data.weekStart) + '</h2><p>Type each person’s week-to-date totals. Numbers move to the history every Monday; targets carry over.</p></div><button type="button" class="btn alt" data-target="report">Weekly Report</button></div>' +
-      (data.team.length ? '<div class="table"><table class="fit score-table"><thead><tr><th>Team member</th><th>Weekly target ($)</th><th>Sales ($)</th><th>Trans&shy;actions</th><th>Items sold</th><th>Results</th></tr></thead><tbody>' +
+      '<div class="card pad mt"><div class="head"><div><h2>' + weekLabelFrom(data.weekStart) + '</h2><p>Type each person’s week-to-date totals. Numbers move to the history every ' + DAY_LONG[weekStartDay] + '; targets carry over.</p></div><button type="button" class="btn alt" data-target="report">Weekly Report</button></div>' +
+      (data.team.length ? '<div class="table"><table class="fit score-table"><thead><tr><th>Team member</th><th>Weekly target (' + currencySymbol() + ')</th><th>Sales (' + currencySymbol() + ')</th><th>Trans&shy;actions</th><th>Items sold</th><th>Results</th></tr></thead><tbody>' +
         rows.map(r => {
           const prev = lastWeekEntry(r.m[0]);
           const tone = paceTone(r.st);
           return '<tr><td>' + personLink(r.m[0]) + '</td>' +
             '<td>' + input(r, "target", r.m[5], "weekly target") + '</td><td>' + input(r, "sales", r.st.sales, "sales") + '</td><td>' + input(r, "trans", r.st.trans, "transactions") + '</td><td>' + input(r, "items", r.st.items, "items sold") + '</td>' +
             '<td class="result-cell">' + (r.st.target ? '<b>' + Math.round(r.st.pct) + '%</b> of target' + progressBar(r.st.pct, tone) : '<span class="muted">No target</span>') +
-            '<small>' + (r.st.trans ? "$" + r.st.avgSale.toFixed(0) + " avg · " + r.st.perSale.toFixed(1) + " items/sale" : "Add transactions") + (prev && prev.sales ? " · last wk " + money(prev.sales) : "") + '</small></td></tr>';
+            '<small>' + (r.st.trans ? money(r.st.avgSale) + " avg · " + r.st.perSale.toFixed(1) + " items/sale" : "Add transactions") + (prev && prev.sales ? " · last wk " + money(prev.sales) : "") + '</small></td></tr>';
         }).join("") +
         '</tbody><tfoot><tr><td>Team</td><td>' + money(totals.target) + '</td><td>' + money(totals.sales) + '</td><td>' + totals.trans + '</td><td>' + totals.items + '</td><td>' + (totals.target ? Math.round(totals.pct) + "% of target" : "") + '</td></tr></tfoot></table></div>' : '<div class="notice">Add team members on the Team tab first.</div>') +
       '</div>' +
@@ -918,7 +983,7 @@
     const metrics = [
       [t[0], money(week.sales), money(data.salesGoal), data.salesGoal ? Math.round(week.sales / data.salesGoal * 100) + "%" : "—", prev && days ? pctChange(week.sales / days, prev.sales / (prev.days || 7)) + " daily avg" : "—"],
       [t[1], Number(week.conv).toFixed(1) + "%", data.convGoal + "%", data.convGoal ? Math.round(week.conv / data.convGoal * 100) + "%" : "—", prev && days ? ptsChange(week.conv, prev.conv) : "—"],
-      [t[2], "$" + Number(week.atv).toFixed(0), "$" + data.atvGoal, data.atvGoal ? Math.round(week.atv / data.atvGoal * 100) + "%" : "—", prev && days ? dollarChange(week.atv, prev.atv) : "—"],
+      [t[2], money(Number(week.atv)), money(data.atvGoal), data.atvGoal ? Math.round(week.atv / data.atvGoal * 100) + "%" : "—", prev && days ? dollarChange(week.atv, prev.atv) : "—"],
       [t[3], Number(week.cx).toFixed(1) + "%", data.cxGoal + "%", data.cxGoal ? Math.round(week.cx / data.cxGoal * 100) + "%" : "—", prev && days ? ptsChange(week.cx, prev.cx) : "—"]
     ];
     const start = isCurrent ? data.weekStart : null;
@@ -949,7 +1014,7 @@
 
   function dollarChange(now, before) {
     const d = Number(now) - Number(before);
-    return (d >= 0 ? "▲ $" : "▼ $") + Math.abs(d).toFixed(0);
+    return (d >= 0 ? "▲ " : "▼ ") + money(Math.abs(d));
   }
 
   function reportPage() {
@@ -966,10 +1031,10 @@
       '<h3>Store results</h3><table class="report-table"><thead><tr><th>Metric</th><th>Actual</th><th>Goal</th><th>% of goal</th><th>vs last week</th></tr></thead><tbody>' +
       r.metrics.map(m => '<tr><td><b>' + esc(m[0]) + '</b></td><td>' + m[1] + '</td><td>' + m[2] + '</td><td>' + m[3] + '</td><td>' + m[4] + '</td></tr>').join("") + '</tbody></table>' +
       (r.isCurrent ? '<h3>By day</h3><table class="report-table"><thead><tr><th>Day</th><th>' + esc(t[0]) + '</th><th>' + esc(t[1]) + '</th><th>' + esc(t[2]) + '</th><th>' + esc(t[3]) + '</th></tr></thead><tbody>' +
-        data.days.map((d, i) => '<tr><td>' + WEEKDAYS[i] + ' ' + shortDate(addDays(data.weekStart, i)) + '</td>' + (hasDay(d) ? '<td>' + money(d.sales) + '</td><td>' + Number(d.conv).toFixed(1) + '%</td><td>$' + Number(d.atv).toFixed(0) + '</td><td>' + Number(d.cx).toFixed(1) + '%</td>' : '<td colspan="4" class="muted">—</td>') + '</tr>').join("") + '</tbody></table>' : "") +
+        data.days.map((d, i) => '<tr><td>' + weekdays()[i] + ' ' + shortDate(addDays(data.weekStart, i)) + '</td>' + (hasDay(d) ? '<td>' + money(d.sales) + '</td><td>' + Number(d.conv).toFixed(1) + '%</td><td>' + money(Number(d.atv)) + '</td><td>' + Number(d.cx).toFixed(1) + '%</td>' : '<td colspan="4" class="muted">—</td>') + '</tr>').join("") + '</tbody></table>' : "") +
       '<h3>Team scorecard</h3>' + (r.people.length ? '<table class="report-table"><thead><tr><th>Team member</th><th>Sales</th><th>Target</th><th>% of target</th><th>Avg sale</th><th>Items/sale</th></tr></thead><tbody>' +
-        r.people.map(p => '<tr><td>' + esc(p.name) + '</td><td>' + money(p.st.sales) + '</td><td>' + (p.st.target ? money(p.st.target) : "—") + '</td><td>' + (p.st.target ? Math.round(p.st.pct) + "%" : "—") + '</td><td>' + (p.st.trans ? "$" + p.st.avgSale.toFixed(0) : "—") + '</td><td>' + (p.st.trans ? p.st.perSale.toFixed(1) : "—") + '</td></tr>').join("") +
-        '</tbody><tfoot><tr><td>Team</td><td>' + money(r.totals.sales) + '</td><td>' + (r.totals.target ? money(r.totals.target) : "—") + '</td><td>' + (r.totals.target ? Math.round(r.totals.pct) + "%" : "—") + '</td><td>' + (r.totals.trans ? "$" + r.totals.avgSale.toFixed(0) : "—") + '</td><td>' + (r.totals.trans ? r.totals.perSale.toFixed(1) : "—") + '</td></tr></tfoot></table>' : '<p class="muted">No team numbers recorded for this week.</p>') +
+        r.people.map(p => '<tr><td>' + esc(p.name) + '</td><td>' + money(p.st.sales) + '</td><td>' + (p.st.target ? money(p.st.target) : "—") + '</td><td>' + (p.st.target ? Math.round(p.st.pct) + "%" : "—") + '</td><td>' + (p.st.trans ? money(p.st.avgSale) : "—") + '</td><td>' + (p.st.trans ? p.st.perSale.toFixed(1) : "—") + '</td></tr>').join("") +
+        '</tbody><tfoot><tr><td>Team</td><td>' + money(r.totals.sales) + '</td><td>' + (r.totals.target ? money(r.totals.target) : "—") + '</td><td>' + (r.totals.target ? Math.round(r.totals.pct) + "%" : "—") + '</td><td>' + (r.totals.trans ? money(r.totals.avgSale) : "—") + '</td><td>' + (r.totals.trans ? r.totals.perSale.toFixed(1) : "—") + '</td></tr></tfoot></table>' : '<p class="muted">No team numbers recorded for this week.</p>') +
       (r.isCurrent ? '<h3>People</h3><ul class="report-list">' +
         '<li><b>Top performers:</b> ' + (top3.length ? top3.map(p => esc(p.name) + (p.st.target ? " (" + Math.round(p.st.pct) + "%)" : " (" + money(p.st.sales) + ")")).join(", ") : "—") + '</li>' +
         '<li><b>Coaching:</b> ' + r.counts.coachingOpen + ' open, ' + r.counts.coachingOverdue + ' overdue</li>' +
@@ -992,7 +1057,7 @@
     r.metrics.forEach(m => lines.push("• " + m[0] + ": " + m[1] + " (goal " + m[2] + ", " + m[3] + " of goal" + (m[4] !== "—" ? ", " + m[4] + " vs last week" : "") + ")"));
     if (r.people.length) {
       lines.push("", "TEAM");
-      r.people.forEach(p => lines.push("• " + p.name + ": " + money(p.st.sales) + (p.st.target ? " (" + Math.round(p.st.pct) + "% of " + money(p.st.target) + ")" : "") + (p.st.trans ? ", $" + p.st.avgSale.toFixed(0) + " avg sale, " + p.st.perSale.toFixed(1) + " items/sale" : "")));
+      r.people.forEach(p => lines.push("• " + p.name + ": " + money(p.st.sales) + (p.st.target ? " (" + Math.round(p.st.pct) + "% of " + money(p.st.target) + ")" : "") + (p.st.trans ? ", " + money(p.st.avgSale) + " avg sale, " + p.st.perSale.toFixed(1) + " items/sale" : "")));
       lines.push("• Team: " + money(r.totals.sales) + (r.totals.target ? " (" + Math.round(r.totals.pct) + "% of target)" : ""));
     }
     if (r.isCurrent) {
@@ -1062,7 +1127,7 @@
       '</div></div>' +
       memberNumbersCard(index) +
       '<div class="card pad mt"><div class="head"><div><h2>This week’s schedule</h2><p>' + memberHours(m) + ' hours scheduled</p></div></div><div class="schedule-mini">' +
-      WEEKDAYS.map((d, i) => '<div class="' + (i === tIdx ? "today-col" : "") + '"><label>' + d + '</label><input class="shift" data-shift="' + index + ':' + i + '" value="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + d + ' shift"></div>').join("") +
+      weekdays().map((d, i) => '<div class="' + (i === tIdx ? "today-col" : "") + '"><label>' + d + '</label><input class="shift" data-shift="' + index + ':' + i + '" value="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + d + ' shift"></div>').join("") +
       '</div></div>' +
       '<div class="two mt">' +
       '<div class="card pad"><div class="head"><div><h2>Coaching</h2><p>' + coaching.length + ' on record</p></div><button type="button" class="btn alt small" data-add-for="coaching">+ Add</button></div>' +
@@ -1087,8 +1152,8 @@
     const st = currentStats(m);
     const field = (key, label, value) => '<div><label>' + label + '</label><input class="cell-input" type="number" inputmode="decimal" min="0" data-person="' + index + '" data-field="' + key + '" value="' + (Number(value) || "") + '" placeholder="0"></div>';
     const past = data.teamHistory.slice(-4).reverse().filter(h => h.entries[m[0]]);
-    return '<div class="card pad mt"><div class="head"><div><h2>This week’s numbers</h2><p>' + (st.target ? Math.round(st.pct) + "% of their " + money(st.target) + " target" : "No weekly target yet") + (st.trans ? " · $" + st.avgSale.toFixed(0) + " avg sale · " + st.perSale.toFixed(1) + " items/sale" : "") + '</p></div><button type="button" class="btn alt small" data-target="scorecard">Scorecard</button></div>' +
-      '<div class="numbers-grid">' + field("target", "Weekly target ($)", m[5]) + field("sales", "Sales ($)", st.sales) + field("trans", "Transactions", st.trans) + field("items", "Items sold", st.items) + '</div>' +
+    return '<div class="card pad mt"><div class="head"><div><h2>This week’s numbers</h2><p>' + (st.target ? Math.round(st.pct) + "% of their " + money(st.target) + " target" : "No weekly target yet") + (st.trans ? " · " + money(st.avgSale) + " avg sale · " + st.perSale.toFixed(1) + " items/sale" : "") + '</p></div><button type="button" class="btn alt small" data-target="scorecard">Scorecard</button></div>' +
+      '<div class="numbers-grid">' + field("target", "Weekly target (" + currencySymbol() + ")", m[5]) + field("sales", "Sales (" + currencySymbol() + ")", st.sales) + field("trans", "Transactions", st.trans) + field("items", "Items sold", st.items) + '</div>' +
       (st.target ? progressBar(st.pct, paceTone(st)) : "") +
       (past.length ? '<div class="past-weeks">' + past.map(h => {
         const p = personStats(h.entries[m[0]], h.entries[m[0]].target);
@@ -1173,13 +1238,13 @@
 
   function schedulePage() {
     const tIdx = todayIndex();
-    const counts = WEEKDAYS.map((d, i) => data.team.filter(m => isWorking(m[4][i])).length);
+    const counts = weekdays().map((d, i) => data.team.filter(m => isWorking(m[4][i])).length);
     const total = data.team.reduce((sum, m) => sum + memberHours(m), 0);
     return top("Schedule", "Who’s working when. Type shifts like 9-5, 10:30-7 or Off.") +
       (data.scheduleCopied ? '<div class="notice warn-notice"><span>These shifts were carried over from last week. Update anything that changed, or tap Clear Schedule to start over.</span><button type="button" class="btn alt small" id="schedule-ok">Looks right</button></div>' : "") +
       '<div class="card pad' + (data.scheduleCopied ? " mt" : "") + '"><div class="head"><div><h2>Shifts for ' + weekLabelFrom(data.weekStart) + '</h2><p>' + total + ' total hours scheduled. Today’s column is highlighted.</p></div><div class="btn-row"><button type="button" class="btn alt" id="clear-schedule">Clear Schedule</button><button type="button" class="btn" id="print-page">Print</button></div></div>' +
-      (data.team.length ? '<div class="table sched-wrap"><table class="fit sched-table"><thead><tr><th>Team member</th>' + WEEKDAYS.map((d, i) => '<th class="' + (i === tIdx ? "today-col" : "") + '">' + d + '</th>').join("") + '<th>Hours</th></tr></thead><tbody>' +
-        data.team.map((m, r) => '<tr><td>' + personLink(m[0]) + '</td>' + WEEKDAYS.map((d, i) => '<td class="' + (i === tIdx ? "today-col" : "") + '"><input class="shift" data-shift="' + r + ':' + i + '" value="' + esc(m[4][i]) + '" title="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + esc(m[0]) + ' ' + d + '"></td>').join("") + '<td><b>' + memberHours(m) + '</b></td></tr>').join("") +
+      (data.team.length ? '<div class="table sched-wrap"><table class="fit sched-table"><thead><tr><th>Team member</th>' + weekdays().map((d, i) => '<th class="' + (i === tIdx ? "today-col" : "") + '">' + d + '</th>').join("") + '<th>Hours</th></tr></thead><tbody>' +
+        data.team.map((m, r) => '<tr><td>' + personLink(m[0]) + '</td>' + weekdays().map((d, i) => '<td class="' + (i === tIdx ? "today-col" : "") + '"><input class="shift" data-shift="' + r + ':' + i + '" value="' + esc(m[4][i]) + '" title="' + esc(m[4][i]) + '" placeholder="Off" aria-label="' + esc(m[0]) + ' ' + d + '"></td>').join("") + '<td><b>' + memberHours(m) + '</b></td></tr>').join("") +
         '</tbody><tfoot><tr><td>Working</td>' + counts.map((c, i) => '<td class="' + (i === tIdx ? "today-col" : "") + '">' + c + '</td>').join("") + '<td>' + total + '</td></tr></tfoot></table></div>' : '<div class="notice">Add team members on the Team tab, then build their schedule here.</div>') +
       '</div>';
   }
@@ -1203,10 +1268,12 @@
     return top("Settings", "Set it up once. It’s used everywhere.") +
       '<div class="card pad"><div class="head"><div><h2>You &amp; your store</h2></div></div><div class="two">' +
       field("Your name", "manager-name", data.manager) + field("Store name", "store-name", data.store, "", "e.g. Store #214") +
+      '<div class="field"><label for="currency">Currency</label><select id="currency">' + Object.keys(CURRENCIES).map(code => '<option value="' + code + '"' + (data.currency === code ? " selected" : "") + '>' + CURRENCIES[code] + ' (' + code + ')</option>').join("") + '</select></div>' +
+      '<div class="field"><label for="week-start">Week starts on</label><select id="week-start">' + [[1, "Monday"], [0, "Sunday"], [6, "Saturday"]].map(o => '<option value="' + o[0] + '"' + (weekStartDay === o[0] ? " selected" : "") + '>' + o[1] + '</option>').join("") + '</select></div>' +
       '</div><div class="head" style="margin-top:8px"><div><h2>Metrics &amp; weekly goals</h2><p>Rename the four metrics to match what your company tracks. Changes save automatically.</p></div></div><div class="two">' +
-      field("Metric 1 name (dollars)", "metric-title-0", t[0]) + field(esc(t[0]) + " goal for the week ($)", "sales-goal", data.salesGoal, "number") +
+      field("Metric 1 name (money)", "metric-title-0", t[0]) + field(esc(t[0]) + " goal for the week (" + currencySymbol() + ")", "sales-goal", data.salesGoal, "number") +
       field("Metric 2 name (percent)", "metric-title-1", t[1]) + field(esc(t[1]) + " goal (%)", "conv-goal", data.convGoal, "number") +
-      field("Metric 3 name (dollars)", "metric-title-2", t[2]) + field(esc(t[2]) + " goal ($)", "atv-goal", data.atvGoal, "number") +
+      field("Metric 3 name (money)", "metric-title-2", t[2]) + field(esc(t[2]) + " goal (" + currencySymbol() + ")", "atv-goal", data.atvGoal, "number") +
       field("Metric 4 name (percent)", "metric-title-3", t[3]) + field(esc(t[3]) + " goal (%)", "cx-goal", data.cxGoal, "number") +
       '</div><button class="btn" id="save-settings">Save Settings</button></div>' +
       '<div class="card pad mt"><div class="head"><div><h2>Appearance</h2><p>Pick a colour scheme. Each one has a light and a dark version.</p></div></div>' +
@@ -1345,12 +1412,43 @@
     if (el) el.addEventListener("click", handler);
   }
 
+  // Changing the first day of the week keeps every result and shift on its real date and weekday.
+  // Results that fall outside the new week move into the weekly history.
+  function changeWeekStart(newStart) {
+    const oldStart = weekStartDay;
+    if (newStart === oldStart) return;
+    const oldDates = data.days.map((d, i) => addDays(data.weekStart, i));
+    weekStartDay = newStart;
+    const newWeek = weekStartIso(0);
+    const newDates = data.days.map((d, i) => addDays(newWeek, i));
+    const outside = data.days.filter((d, i) => newDates.indexOf(oldDates[i]) < 0 && hasDay(d));
+    if (outside.length && !window.confirm("Starting weeks on " + DAY_LONG[newStart] + " moves " + outside.length + (outside.length === 1 ? " day" : " days") + " of results into the weekly history, because they fall before the new week. Continue?")) {
+      weekStartDay = oldStart;
+      render();
+      return;
+    }
+    if (outside.length) {
+      const avg = key => Math.round(outside.reduce((sum, d) => sum + Number(d[key] || 0), 0) / outside.length * 10) / 10;
+      data.history.push({ start: data.weekStart, label: weekLabelFrom(data.weekStart), sales: outside.reduce((sum, d) => sum + Number(d.sales || 0), 0), days: outside.length, conv: avg("conv"), atv: avg("atv"), cx: avg("cx") });
+    }
+    const byDate = {};
+    oldDates.forEach((dt, i) => { byDate[dt] = data.days[i]; });
+    data.days = newDates.map(dt => byDate[dt] || { sales: 0, conv: 0, atv: 0, cx: 0 });
+    data.team.forEach(m => { m[4] = rotateWeek(m[4], oldStart, newStart); });
+    data.weekStart = newWeek;
+    data.scheduleWeek = newWeek;
+    data.weekStartDay = newStart;
+    saveData();
+    render();
+    toast("Weeks now start on " + DAY_LONG[newStart] + ".");
+  }
+
   function startFresh() {
     if (!window.confirm("Start fresh? This clears your team, coaching, 1:1 notes, training, goals, schedule and results. Your name, store, metrics, goals and theme are kept.")) return;
     const fresh = blankData();
-    ["salesGoal", "convGoal", "atvGoal", "cxGoal", "metricTitles", "manager", "store", "lastBackup", "theme", "palette", "dashboard"].forEach(key => { fresh[key] = data[key]; });
-    fresh.weekStart = mondayIso(0);
-    fresh.scheduleWeek = mondayIso(0);
+    ["salesGoal", "convGoal", "atvGoal", "cxGoal", "metricTitles", "manager", "store", "lastBackup", "theme", "palette", "currency", "weekStartDay", "dashboard"].forEach(key => { fresh[key] = data[key]; });
+    fresh.weekStart = weekStartIso(0);
+    fresh.scheduleWeek = weekStartIso(0);
     if (fresh.manager === "Alex Manager") fresh.manager = "";
     data = fresh;
     saveData();
@@ -1412,7 +1510,7 @@
     pagesEl.querySelectorAll("[data-clear-day]").forEach(button => {
       button.addEventListener("click", () => {
         const i = Number(button.dataset.clearDay);
-        if (!window.confirm("Clear " + WEEKDAYS[i] + "’s results?")) return;
+        if (!window.confirm("Clear " + weekdays()[i] + "’s results?")) return;
         data.days[i] = { sales: 0, conv: 0, atv: 0, cx: 0 };
         saveData();
         render();
@@ -1619,11 +1717,13 @@
       if (!window.confirm("Replace everything with the sample data? Download a backup first if you want to keep your current data.")) return;
       const theme = data.theme;
       const palette = data.palette;
+      const currency = data.currency;
       const layout = data.dashboard;
       data = makeSample();
       data.welcomeDismissed = true;
       data.theme = theme;
       data.palette = palette;
+      data.currency = currency;
       data.dashboard = layout;
       saveData();
       go("dashboard");
@@ -1671,6 +1771,16 @@
       if (value("huddle-0")) data.huddle = [0, 1, 2, 3].map(i => value("huddle-" + i).value);
       saveData();
     };
+    const currencySelect = document.getElementById("currency");
+    if (currencySelect) currencySelect.addEventListener("change", () => {
+      data.currency = currencySelect.value;
+      saveData();
+      render();
+      toast("Amounts now shown in " + CURRENCIES[data.currency] + " (" + currencySymbol() + ").");
+    });
+    const weekStartSelect = document.getElementById("week-start");
+    if (weekStartSelect) weekStartSelect.addEventListener("change", () => changeWeekStart(Number(weekStartSelect.value)));
+
     // Settings save as soon as a field changes, so nothing is lost by switching tabs.
     pagesEl.querySelectorAll("[data-setting]").forEach(input => input.addEventListener("change", readSettings));
     bind("save-huddle", () => {
@@ -1813,9 +1923,9 @@
   document.addEventListener("focusout", hideTip);
   window.addEventListener("scroll", hideTip, true);
 
-  // A tracker left open overnight moves to the new week on Monday by itself.
+  // A tracker left open overnight moves to the new week by itself.
   function checkNewWeek() {
-    if (data.weekStart !== mondayIso(0) || data.scheduleWeek !== mondayIso(0)) render();
+    if (data.weekStart !== weekStartIso(0) || data.scheduleWeek !== weekStartIso(0)) render();
   }
   setInterval(checkNewWeek, 60000);
   document.addEventListener("visibilitychange", () => {
